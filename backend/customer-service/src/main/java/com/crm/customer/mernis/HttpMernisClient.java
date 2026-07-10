@@ -1,13 +1,12 @@
 package com.crm.customer.mernis;
 
 import java.time.LocalDate;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Component
-@EnableConfigurationProperties(MernisProperties.class)
 public class HttpMernisClient implements MernisClient {
 
     private record VerifyRequest(String nationalityId, String firstName, String lastName, LocalDate birthDate) {
@@ -18,8 +17,8 @@ public class HttpMernisClient implements MernisClient {
 
     private final RestClient restClient;
 
-    public HttpMernisClient(RestClient.Builder loadBalancedRestClientBuilder, MernisProperties properties) {
-        this.restClient = loadBalancedRestClientBuilder.baseUrl(properties.baseUrl()).build();
+    public HttpMernisClient(@Qualifier("mernisRestClient") RestClient mernisRestClient) {
+        this.restClient = mernisRestClient;
     }
 
     @Override

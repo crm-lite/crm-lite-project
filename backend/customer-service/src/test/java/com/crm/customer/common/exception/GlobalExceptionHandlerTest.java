@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.crm.customer.lookup.LookupCatalogUnavailableException;
+import com.crm.customer.lookup.UnknownLookupCodeException;
+import com.crm.customer.mernis.MernisRejectedException;
+import com.crm.customer.mernis.MernisUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,7 +58,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void unreadableBody_invalidEnumCause_returnsFieldLevelValidationError() {
-        JavaType genderType = SimpleType.constructUnsafe(com.crm.customer.customer.entity.Gender.class);
+        JavaType genderType = SimpleType.constructUnsafe(com.crm.customer.customer.dto.Gender.class);
         IllegalArgumentException enumCause = new IllegalArgumentException("Invalid gender value: Unknown");
         ValueInstantiationException vie = ValueInstantiationException.from(null, "boom", genderType, enumCause);
         vie.prependPath(new JacksonException.Reference(new Object(), "gender"));
@@ -85,5 +89,48 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody().getMessage()).isEqualTo("Unexpected error");
         assertThat(response.getBody().getMessage()).doesNotContain("some internal detail");
+    }
+
+    @Test
+    void unknownLookupCode_mapsToFieldLevel400() {
+        UnknownLookupCodeException ex = new UnknownLookupCodeException("gender", "Unknown type code: XX");
+
+        ResponseEntity<ErrorResponse> response = handler.handleUnknownLookupCode(ex, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMessageKey()).isEqualTo(MessageKeys.VALIDATION_ERROR);
+        assertThat(response.getBody().getValidationErrors()).containsEntry("gender", "Unknown type code: XX");
+    }
+
+    @Test
+    void lookupCatalogUnavailable_mapsTo503FailClosed() {
+        LookupCatalogUnavailableException ex =
+                new LookupCatalogUnavailableException("down", new RuntimeException("connect refused"));
+
+        ResponseEntity<ErrorResponse> response = handler.handleUpstreamUnavailable(ex, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody().getMessageKey()).isEqualTo(MessageKeys.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody().getMessage()).doesNotContain("connect refused");
+    }
+
+    @Test
+    void mernisUnavailable_mapsTo503FailClosed() {
+        MernisUnavailableException ex = new MernisUnavailableException("down", new RuntimeException());
+
+        ResponseEntity<ErrorResponse> response = handler.handleUpstreamUnavailable(ex, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody().getMessageKey()).isEqualTo(MessageKeys.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    void mernisRejected_mapsTo400WithVerifyFailedKey() {
+        MernisRejectedException ex = new MernisRejectedException("Nationality ID could not be verified by MERNIS");
+
+        ResponseEntity<ErrorResponse> response = handler.handleMernisRejected(ex, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMessageKey()).isEqualTo(MessageKeys.NATID_VERIFY_FAILED);
     }
 }

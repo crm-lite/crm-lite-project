@@ -16,6 +16,42 @@
     <name>lookup-service</name>
     <description>Central owner of the shared GNL_ST / GNL_TP catalogs (see ADR-002)</description>
 
+    <properties>
+        <testcontainers.version>1.21.3</testcontainers.version>
+        <!-- Testcontainers 1.21.3 bundles docker-java 3.4.2, whose npipe probe uses a
+             fallback API version the Docker 29 engine (Rancher Desktop) rejects
+             ("client version 1.32 is too old"). 3.5.x negotiates correctly. -->
+        <docker-java.version>3.5.1</docker-java.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot 4's parent BOM does not manage Testcontainers versions. -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.github.docker-java</groupId>
+                <artifactId>docker-java-api</artifactId>
+                <version>${docker-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.docker-java</groupId>
+                <artifactId>docker-java-transport-zerodep</artifactId>
+                <version>${docker-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.docker-java</groupId>
+                <artifactId>docker-java-transport</artifactId>
+                <version>${docker-java.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -74,6 +110,16 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -95,6 +141,17 @@
                             <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <!-- Testcontainers' shaded docker-java defaults to Docker API v1.32,
+                     which Docker 29+ engines (Rancher Desktop) reject ("client version
+                     1.32 is too old; minimum is 1.41"). Pin a supported version for the
+                     test JVM so `mvn test` works out of the box. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-Dapi.version=1.44</argLine>
                 </configuration>
             </plugin>
         </plugins>

@@ -8,8 +8,9 @@ import static org.mockito.Mockito.when;
 import com.crm.customer.common.exception.BusinessException;
 import com.crm.customer.common.exception.MessageKeys;
 import com.crm.customer.customer.entity.Customer;
-import com.crm.customer.customer.entity.Status;
 import com.crm.customer.customer.repository.CustomerRepository;
+import com.crm.customer.customer.repository.IndividualRepository;
+import com.crm.customer.lookup.LookupContract;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,17 +20,19 @@ import org.springframework.http.HttpStatus;
 class CustomerBusinessRulesTest {
 
     private CustomerRepository customerRepository;
+    private IndividualRepository individualRepository;
     private CustomerBusinessRules rules;
 
     @BeforeEach
     void setUp() {
         customerRepository = mock(CustomerRepository.class);
-        rules = new CustomerBusinessRules(customerRepository);
+        individualRepository = mock(IndividualRepository.class);
+        rules = new CustomerBusinessRules(customerRepository, individualRepository);
     }
 
     @Test
-    void checkAtLeastOneSearchCriterionExists_throwsWhenNoneProvided() {
-        assertThatThrownBy(() -> rules.checkAtLeastOneSearchCriterionExists(null, "  ", null, null))
+    void atLeastOneSearchCriterion_throwsWhenNoneProvided() {
+        assertThatThrownBy(() -> rules.checkAtLeastOneSearchCriterionExists(null, "  ", null, null, null))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException be = (BusinessException) ex;
@@ -39,13 +42,19 @@ class CustomerBusinessRulesTest {
     }
 
     @Test
-    void checkAtLeastOneSearchCriterionExists_passesWhenCustomerIdProvided() {
-        rules.checkAtLeastOneSearchCriterionExists(null, null, null, 42L);
+    void atLeastOneSearchCriterion_passesWithCustomerNumberOnly() {
+        rules.checkAtLeastOneSearchCriterionExists(null, null, null, 1001L, null);
     }
 
     @Test
-    void checkNoUnsupportedCrossServiceSearchCriterion_throwsWhenGsmNumberProvided() {
-        assertThatThrownBy(() -> rules.checkNoUnsupportedCrossServiceSearchCriterion(null, "05321112233", null))
+    void atLeastOneSearchCriterion_passesWithGsmOnly() {
+        // gsmNumber is now a locally searchable criterion (CNTC_MEDIUM is owned here).
+        rules.checkAtLeastOneSearchCriterionExists(null, null, null, null, "0532");
+    }
+
+    @Test
+    void crossServiceCriteria_accountNumberStill501() {
+        assertThatThrownBy(() -> rules.checkNoUnsupportedCrossServiceSearchCriterion("0101112900", null))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException be = (BusinessException) ex;
@@ -55,44 +64,56 @@ class CustomerBusinessRulesTest {
     }
 
     @Test
-    void checkNoUnsupportedCrossServiceSearchCriterion_passesWhenNoneProvided() {
-        rules.checkNoUnsupportedCrossServiceSearchCriterion(null, null, null);
+    void crossServiceCriteria_orderNumberStill501() {
+        assertThatThrownBy(() -> rules.checkNoUnsupportedCrossServiceSearchCriterion(null, "5001"))
+                .isInstanceOf(BusinessException.class);
     }
 
     @Test
-    void checkCustomerExistsAndActive_throwsWhenNotFound() {
-        when(customerRepository.findById(1L)).thenReturn(Optional.empty());
+    void crossServiceCriteria_passesWhenNoneProvided() {
+        rules.checkNoUnsupportedCrossServiceSearchCriterion(null, null);
+    }
 
-        assertThatThrownBy(() -> rules.checkCustomerExistsAndActive(1L))
+    @Test
+    void customerExistsAndActive_throwsNotFoundWhenMissing() {
+        when(customerRepository.findByCustomerNumber(9999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> rules.checkCustomerExistsAndActive(9999L))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey()).isEqualTo(MessageKeys.CUST_NOT_FOUND));
+                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey())
+                        .isEqualTo(MessageKeys.CUST_NOT_FOUND));
     }
 
     @Test
-    void checkCustomerExistsAndActive_throwsWhenPassive() {
+    void customerExistsAndActive_throwsNotFoundWhenSoftDeleted() {
         Customer passive = new Customer();
-        passive.setStatus(Status.PASSIVE);
-        when(customerRepository.findById(2L)).thenReturn(Optional.of(passive));
+        passive.setStatusId(LookupContract.STATUS_PASSIVE_ID);
+        passive.markDeleted("system");
+        when(customerRepository.findByCustomerNumber(1003L)).thenReturn(Optional.of(passive));
 
-        assertThatThrownBy(() -> rules.checkCustomerExistsAndActive(2L))
+        assertThatThrownBy(() -> rules.checkCustomerExistsAndActive(1003L))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey()).isEqualTo(MessageKeys.CUST_NOT_FOUND));
+                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey())
+                        .isEqualTo(MessageKeys.CUST_NOT_FOUND));
     }
 
     @Test
-    void checkCustomerExistsAndActive_returnsCustomerWhenActive() {
+    void customerExistsAndActive_returnsActiveCustomer() {
         Customer active = new Customer();
-        active.setStatus(Status.ACTIVE);
-        when(customerRepository.findById(3L)).thenReturn(Optional.of(active));
+        active.setStatusId(LookupContract.STATUS_ACTIVE_ID);
+        when(customerRepository.findByCustomerNumber(1001L)).thenReturn(Optional.of(active));
 
-        assertThat(rules.checkCustomerExistsAndActive(3L)).isSameAs(active);
+        assertThat(rules.checkCustomerExistsAndActive(1001L)).isSameAs(active);
     }
 
     @Test
-    void checkNationalityIdIsUniqueForCreate_throwsWhenAlreadyActive() {
-        when(customerRepository.existsActiveByNationalityId("10000000001")).thenReturn(true);
+    void nationalityIdUniqueness_createChecksAllRowsIncludingDeleted() {
+        // ADR-003: the repository query has no active/deleted filter — one mock covers
+        // the "held by a soft-deleted customer" case exercised end-to-end in the
+        // integration test.
+        when(individualRepository.existsByNationalityId("34567890123")).thenReturn(true);
 
-        assertThatThrownBy(() -> rules.checkNationalityIdIsUniqueForCreate("10000000001"))
+        assertThatThrownBy(() -> rules.checkNationalityIdIsUniqueForCreate("34567890123"))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException be = (BusinessException) ex;
@@ -102,43 +123,39 @@ class CustomerBusinessRulesTest {
     }
 
     @Test
-    void checkNationalityIdIsUniqueForCreate_passesWhenFree() {
-        when(customerRepository.existsActiveByNationalityId("10000000009")).thenReturn(false);
-        rules.checkNationalityIdIsUniqueForCreate("10000000009");
+    void nationalityIdUniqueness_createPassesWhenFree() {
+        when(individualRepository.existsByNationalityId("99988877766")).thenReturn(false);
+        rules.checkNationalityIdIsUniqueForCreate("99988877766");
     }
 
     @Test
-    void checkNationalityIdIsUniqueForUpdate_throwsWhenUsedByAnotherActiveCustomer() {
-        when(customerRepository.existsActiveByNationalityIdExcludingCustomer("10000000001", 5L)).thenReturn(true);
+    void nationalityIdUniqueness_updateExcludesOnlyOwnRecord() {
+        when(individualRepository.existsByNationalityIdAndIdNot("12345678901", 5L)).thenReturn(true);
 
-        assertThatThrownBy(() -> rules.checkNationalityIdIsUniqueForUpdate("10000000001", 5L))
+        assertThatThrownBy(() -> rules.checkNationalityIdIsUniqueForUpdate("12345678901", 5L))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey()).isEqualTo(MessageKeys.CUST_DUP_NATID));
+                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey())
+                        .isEqualTo(MessageKeys.CUST_DUP_NATID));
     }
 
     @Test
-    void checkBirthDateIsNotFuture_throwsWhenInFuture() {
-        LocalDate tomorrow = LocalDate.now().plusDays(1);
-        assertThatThrownBy(() -> rules.checkBirthDateIsNotFuture(tomorrow))
+    void birthDate_futureRejected() {
+        assertThatThrownBy(() -> rules.checkBirthDateIsNotFuture(LocalDate.now().plusDays(1)))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey()).isEqualTo(MessageKeys.VAL_BIRTHDATE));
+                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey())
+                        .isEqualTo(MessageKeys.VAL_BIRTHDATE));
     }
 
     @Test
-    void checkBirthDateIsNotFuture_passesForPastDate() {
-        rules.checkBirthDateIsNotFuture(LocalDate.now().minusYears(20));
-    }
-
-    @Test
-    void checkCustomerIsAtLeast18_throwsWhenUnder18() {
-        LocalDate seventeenYearsAgo = LocalDate.now().minusYears(17);
-        assertThatThrownBy(() -> rules.checkCustomerIsAtLeast18(seventeenYearsAgo))
+    void age_under18Rejected() {
+        assertThatThrownBy(() -> rules.checkCustomerIsAtLeast18(LocalDate.now().minusYears(17)))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey()).isEqualTo(MessageKeys.VAL_AGE_MIN));
+                .satisfies(ex -> assertThat(((BusinessException) ex).getMessageKey())
+                        .isEqualTo(MessageKeys.VAL_AGE_MIN));
     }
 
     @Test
-    void checkCustomerIsAtLeast18_passesWhenExactly18() {
+    void age_exactly18Passes() {
         rules.checkCustomerIsAtLeast18(LocalDate.now().minusYears(18));
     }
 }

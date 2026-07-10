@@ -4,8 +4,10 @@
 > Hem projeye sonradan dönen geliştirici, hem de sıfırdan bağlam kuran bir AI agent bu dosyayı
 > okuyarak "nerede kaldık, neden böyle yapıldı, sırada ne var" sorularını cevaplayabilmelidir.
 >
-> **Son güncelleme:** 2026-07-09 (customer-service sertleştirildi: arama prefix+middleName, role.name,
-> canonical `GET /api/customers`, nationalityId ACTIVE-only tekillik, gateway 503 fix, testler eklendi)
+> **Son güncelleme:** 2026-07-11 (customer aggregate tamamlandı: workbook şeması + adres/iletişim
+> modülleri + atomik create; merkezi GNL_ST/GNL_TP kataloğu için **lookup-service** ve KR-10 için
+> **mernis-stub** eklendi; nationalityId KALICI global tekillik [ADR-003]; `/api/customers/search`
+> alias'ı KALDIRILDI; Testcontainers test altyapısı — bkz. ADR-001..004)
 > **Bu dosyayı güncel tut:** Her anlamlı değişiklikten sonra ilgili bölümü ve "Sırada ne var" listesini güncelle.
 
 ---
@@ -13,9 +15,11 @@
 ## 1. Proje Özeti
 
 CRM Lite — Spring Boot tabanlı bir **mikroservis monorepo**'su. Altyapı çekirdeği
-(config server + service discovery + API gateway) kurulu ve çalışır durumda; `customer-service`
-müşteri çekirdek CRUD'unu (arama/görüntüleme/oluşturma/güncelleme/soft-delete) implemente ediyor
-ve Postgres ile çalışıyor; `auth-service` henüz iskelet halinde.
+(config server + service discovery + API gateway) kurulu ve çalışır durumda. `customer-service`
+**müşteri agregatının tamamını** (demografik + adres + iletişim, ADR-001) final Entity/Seed
+workbook şemasıyla implemente ediyor; paylaşılan GNL_ST/GNL_TP kataloglarının sahibi
+**`lookup-service`** (ADR-002) ve KR-10 kimlik doğrulaması için **`mernis-stub`** ayakta;
+`auth-service` henüz iskelet halinde (yön: Keycloak, ADR-004).
 
 - **Dil / Runtime:** Java 25
 - **Framework:** Spring Boot `4.1.0`, Spring Cloud `2025.1.2`
@@ -51,8 +55,10 @@ ve Postgres ile çalışıyor; `auth-service` henüz iskelet halinde.
 | `config-server` | 8888 | Merkezi config (Spring Cloud Config Server, native/classpath) | ✅ Çalışıyor |
 | `discovery-server` | 8761 | Eureka service registry | ✅ Çalışıyor |
 | `api-gateway` | 8080 | API gateway (WebMVC), routing + security | ✅ Çalışıyor |
-| `auth-service` | 8081 | Kimlik doğrulama / JWT | ⛔ İskelet — Postgres + kod eksik, ayağa kalkmıyor |
-| `customer-service` | 8082 | Müşteri çekirdek CRUD (FR-CUST-01..05) | ✅ Çalışıyor — Postgres gerekli |
+| `auth-service` | 8081 | Kimlik doğrulama | ⛔ İskelet — yön: Keycloak (ADR-004) |
+| `customer-service` | 8082 | Müşteri agregatı: FR-CUST + FR-ADDR + FR-CNTC (`customer_db`) | ✅ Çalışıyor — Postgres + lookup-service + mernis-stub (yazma işlemleri için) |
+| `lookup-service` | 8083 | **Paylaşılan GNL_ST/GNL_TP kataloglarının TEK sahibi** (`lookup_db`, ADR-002) | ✅ Çalışıyor — Postgres gerekli |
+| `mernis-stub` | 8084 | Fake MERNİS/KPS doğrulama (KR-10) — DB'siz, deterministik | ✅ Çalışıyor |
 
 ---
 
@@ -184,58 +190,81 @@ crm-lite-project-dev/
 - **Not:** Postgres kurulduğunda datasource/flyway değerleri doğrudan `config-repo/auth-service.yml`'e yazılmalı
   (önce yerel dosyaya geçici değer koyup sonra config-server'a taşımak yerine — bkz. §5.8 gerekçesi).
 
-### 4.4 customer-service ✅
-- Port 8082. Müşteri çekirdek CRUD'u: FR-CUST-01 (arama), FR-CUST-02 (detay), FR-CUST-03 (**sadece çekirdek**
-  oluşturma — adres/iletişim hariç), FR-CUST-04 (güncelleme), FR-CUST-05 (soft delete).
-- **Katman mimarisi:** Controller → Service → BusinessRules → Repository. `common/exception` altında
-  `BusinessException` + `ErrorResponse` + `GlobalExceptionHandler` (+ `MessageKeys` sabitleri).
-- **Veri modeli:** `roles` / `parties` / `individuals` / `party_roles` / `customers` — Party-Role deseni
-  (Party ↔ Individual 1-1, PartyRole Party+Role'e bağlar, Customer bir PartyRole'e bağlanır). Flyway ile
-  kurulu, `hibernate.ddl-auto: validate` (asla create/update değil).
-- **Endpoint'ler:** canonical arama `GET /api/customers`; `GET /api/customers/search` geriye dönük uyumluluk
-  için **legacy alias** olarak tutuluyor (aynı controller metoduna delege ediyor, davranış birebir aynı).
-  Detay/oluşturma/güncelleme/silme aynı kaldı (bkz. docs/customer-service.md).
-- **Arama (FR-CUST-01):** `CustomerSpecifications` ile JPA Criteria — sadece `ACTIVE` müşteriler.
-  `firstName`/`lastName` **prefix** araması yapar (`lower(x) LIKE lower(:x) || '%'`), `contains` değil —
-  `firstName=li` "Ali"/"Velihan" döndürmez. `firstName` ayrıca `middleName`'in prefix'ini de eşler
-  (`firstName=Can` → "Ali Can Kaya", middleName="Can" üzerinden). firstName+lastName tek bir "isim kriteri"
-  olarak AND'lenir, bu kriter nationalityId ve customerId ile OR'lanır. Sayfalama varsayılan 20,
-  `firstName ASC, lastName ASC` sıralı (nested path: `partyRole.party.individual.firstName`).
-- **Türkçe karakter desteği:** `VR-NAME` regex'i Türkçe harfleri (ÇĞİÖŞÜçğıöşü) kabul ediyor ve API bunları
-  doğru işliyor — "Malformed request body" hatası görülürse bu neredeyse her zaman bir **shell/terminal
-  encoding sorunudur** (Windows + Git Bash + native curl.exe, argv üzerinden Türkçe karakter geçerken kod
-  sayfası dönüşümü bozuyor), sunucu kodunda bir hata değil. `GlobalExceptionHandler` artık kök nedeni
-  (gerçek Jackson istisnasını) loglara tam yazıyor; doğru curl kullanımı (`--data-binary @-` ile stdin)
-  docs/customer-service.md'de detaylı anlatılıyor. Ayrıca geçersiz bir enum değeri (örn. `gender: "Unknown"`)
-  artık generic "Malformed request body" yerine temiz bir 400 + `validationErrors: {"gender": "..."}` döner.
-- **Role gösterimi:** Arama/detay yanıtlarındaki `role` alanı `role.name` kullanıyor ("Customer"),
-  `role.code` ("CUSTOMER") değil — dahili lookup'lar (`roleRepository.findByCode`) hâlâ code kullanıyor.
-- **accountNumber/gsmNumber/orderNumber** henüz customer-service'e ait değil — verilirse **501** +
-  `MSG-FEATURE-NOT-IMPLEMENTED` döner (sessizce yanlış sonuç vermek yerine). account/contact/order-service
-  geldiğinde entegre edilecek (TODO yorumları kodda mevcut).
-- **nationalityId tekilliği — düzeltildi (ACTIVE-only):** `individuals.nationality_id` üzerindeki global DB
-  `UNIQUE` kısıtı **kaldırıldı** (V1 migration doğrudan değiştirildi, henüz merge/push edilmediği için kabul
-  edilebilir — bkz. §5.14). Artık tekillik **sadece uygulama katmanında, ACTIVE müşteriler arasında**
-  kontrol ediliyor (`checkNationalityIdIsUniqueForCreate/ForUpdate`), DB seviyesinde hiçbir kısıt yok.
-  Sonuç: soft-delete edilmiş bir müşterinin nationalityId'si artık **yeniden kullanılabiliyor** (eskiden
-  global UNIQUE'e takılıp ham bir DB hatasına düşüyordu). Ek güvence: `DataIntegrityViolationException`
-  artık `GlobalExceptionHandler`'da yakalanıp temiz bir 409 + `MSG-CUST-DUP-NATID`'e çevriliyor (uygulama
-  kontrolünü aşan bir yarış durumu için defense-in-depth).
-  **⚠️ Bu migration değişikliğini çeken geliştiriciler `customer_db`'yi sıfırlamalı** (bkz. §5.14, §7.2).
-- **Soft delete (FR-CUST-05):** customer + partyRole + party durumu tek transaction'da `PASSIVE`'e çekiliyor.
-  `checkCustomerHasNoActiveProducts` şu an TODO/no-op (product-service yok), ileride account/product-service'e
-  entegre edilecek.
-- **Mesaj anahtarları:** Verilen listedeki 9 key kullanılıyor + iki ek key (`MSG-VALIDATION-ERROR`,
-  `MSG-INTERNAL-ERROR`) framework seviyesi hatalar (Bean Validation, malformed JSON, beklenmeyen hata) için
-  eklendi — orijinal listede yoktu, bilinçli bir ekleme.
-- **Gateway route'u:** `config-repo/api-gateway.yml`'e `/api/customers/**` → `lb://customer-service` eklendi.
-- **Testler eklendi** (`src/test/java`): `CustomerBusinessRulesTest` (saf Mockito birim testleri),
-  `CustomerSpecificationsTest` (gerçek local Postgres'e karşı `@DataJpaTest`, Testcontainers kurulu değil —
-  config-server'a ihtiyaç duymadan sadece Postgres'i kullanacak şekilde `src/test/resources/application.yml`
-  ile izole edildi), `GlobalExceptionHandlerTest`. Spring Boot 4'te `@DataJpaTest`/`@AutoConfigureTestDatabase`/
-  `TestEntityManager` `spring-boot-test-autoconfigure`'dan ayrı modüllere taşındı
-  (`spring-boot-data-jpa-test`, `spring-boot-jdbc-test`, `spring-boot-jpa-test`) — bkz. §5.11'deki Flyway
-  örneğiyle aynı desen; `customer-service/pom.xml`'e `spring-boot-data-jpa-test` test-scope bağımlılığı eklendi.
+### 4.4 customer-service ✅ (müşteri AGREGATI — 2026-07-11 refactor'u)
+- Port 8082, DB `customer_db`. Kapsam: **FR-CUST-01..05 + FR-ADDR-01..05 + FR-CNTC-01..02** —
+  adres ve iletişim ayrı servisler DEĞİL, aynı deployable'ın iç modülleri (ADR-001; atomik create gerekçesiyle).
+- **Paket yapısı:** `com.crm.customer.{customer, address, contact, lookup, mernis, common}`.
+  Katmanlar: Controller → Service → BusinessRules → Repository; `common/entity` altında
+  `AuditableEntity` + `StatusAwareEntity` mapped superclass'ları (created/updated/deleted _date/_by + status_id).
+- **Veri modeli (final workbook ile hizalı):** `role` / `city` / `district` / `party` / `ind` /
+  `party_role` / `cust` / `addr` / `cntc_medium` (küçük harf fiziksel adlar). Flyway V1+V2 baseline,
+  `ddl-auto: validate`. **`gnl_st`/`gnl_tp` tablosu YOK** — bunlar merkezi kataloglar (bkz. §4.5, ADR-002);
+  `status_id`/`gender_id`/`party_type_id` kolonları merkezi kontrat ID'lerini taşıyan **dış referanslardır**
+  (FK'sız; cross-database FK kullanılmaz). Aktif kayıt filtresi tamamen yerel:
+  `status_id = 1 (ACTV) AND deleted_date IS NULL` — sorgu başına uzak çağrı yok.
+- **İş kimliği:** `cust.customer_number` (sequence, 1001'den başlar) dışa açılan Customer ID'dir;
+  içsel `cust.id` API'ye asla sızmaz. Arama parametresi `customerId` ve `{customerNumber}` path'leri
+  hep iş numarasıdır.
+- **Endpoint'ler:** arama TEK kanonik endpoint `GET /api/customers` — **`/api/customers/search`
+  alias'ı KALDIRILDI** (yayınlanmış tüketici yok). + detay/create/update/delete, `/addresses` CRUD +
+  `PATCH .../primary`, `/contact-medium` GET/PUT, `GET /api/cities(/{id}/districts)`.
+  Tam liste: docs/api/customer-service.md.
+- **Arama (KR-01, final semantik):** `firstName` = First+Middle birleşiminde **kelime-başı** eşleşme
+  ("Kemal" → "Ali Kemal"i bulur; "li" → "Ali"yi BULMAZ); `lastName` = Last Name'de kelime-başı; ikisi
+  doluysa AND. `gsmNumber` = mobile_phone **prefix** (CNTC_MEDIUM artık yerel → 501 YOK);
+  `nationalityId`/`customerId` birebir. Dolu kriter grupları OR'lanır; yalnız aktif müşteriler;
+  sonuçlar müşteri bazlı distinct (tüm join'ler to-one); 20/sayfa, firstName→lastName sıralı.
+  `accountNumber`/`orderNumber` → hâlâ 501 (account/order domain'leri yok).
+- **Atomik create (AC-CUST-03-21 + KR-10):** tek istek `{demographic, addresses[], contactMedium}` →
+  tek `@Transactional` içinde: bean validation (VR-NAME/NATID/EMAIL/PHONE/MOBILE) → iş kuralları
+  (yaş/doğum tarihi/NATID tekilliği/primary normalizasyonu/city-district) → **merkezi katalog çözümü**
+  (ACTV/INDV/MALE-FEMALE, lookup-service üzerinden; ulaşılamazsa 503 fail-closed) → **MERNIS doğrulaması**
+  (reddedilirse 400 `MSG-NATID-VERIFY-FAILED`, ulaşılamazsa 503; müşteri OLUŞMAZ) → PARTY→IND→PARTY_ROLE→
+  CUST→ADDR→CNTC_MEDIUM persist. Herhangi bir hata = hiçbir satır kalmaz (entegrasyon testli).
+- **nationalityId tekilliği (ADR-003 — §5.14'ü GEÇERSİZ KILAR):** analist kararıyla **kalıcı ve global**:
+  `ind.nationality_id` DB UNIQUE (soft-deleted satırlar DAHİL). Pasif müşteri NATID'sini serbest bırakmaz.
+  Create tüm satırlara bakar; update yalnız kendi kaydını hariç tutar. Yarış durumunda DB kısıtı
+  `DataIntegrityViolationException` → temiz 409 `MSG-CUST-DUP-NATID` (asla 500).
+- **Soft delete (FR-CUST-05):** CUST+PARTY_ROLE+PARTY+IND+ADDR+CNTC_MEDIUM tek transaction'da pasife
+  çekilir; her satırda `status_id=PASV` + `deleted_date/by` + `updated_date/by` (invariant). Fatura
+  hesabı pasifleştirme + aktif ürün kontrolü hâlâ cross-service TODO (bilinçli, dokümante).
+- **Role gösterimi:** yanıtlardaki `role` = `ROLE.role_name` ("Customer"); workbook ROLE tablosunda
+  code kolonu yok, iç arama `findByRoleName`.
+- **Türkçe karakter desteği:** VR-NAME regex'i (1-50, trim-önce) korunuyor; curl'de gövdeyi
+  `--data-binary @-` heredoc ile gönder (argv'de native curl bozar — §5.15).
+- **Mesaj anahtarları:** FR kataloğundakiler + dokümante edilmiş ekler: `MSG-NATID-VERIFY-FAILED`,
+  `MSG-SERVICE-UNAVAILABLE`, `MSG-ADDR-LAST-DELETE`, `MSG-ADDR-PRIMARY-DELETE` (+ önceki
+  `MSG-VALIDATION-ERROR`/`MSG-INTERNAL-ERROR`/`MSG-SEARCH-CRITERIA-REQUIRED`/`MSG-FEATURE-NOT-IMPLEMENTED`).
+- **Gateway route'ları:** `/api/customers/**` ve `/api/cities/**` → `lb://customer-service`;
+  `/api/lookups/**` → `lb://lookup-service`.
+- **Testler (63 test, hepsi geçiyor):** birim (`CustomerBusinessRulesTest`, `AddressBusinessRulesTest`,
+  `LookupCatalogServiceTest`, `GlobalExceptionHandlerTest`) + **PostgreSQL Testcontainers** entegrasyon
+  (`CustomerServiceIntegrationTest`: atomik rollback senaryoları, ADR-003 rezervasyonu, kelime-başı arama
+  matrisi, GSM prefix, adres invariant'ları, soft-delete metadata, customer_db'de gnl tablosu olmadığının
+  kanıtı). Lookup/MERNIS istemcileri interface seviyesinde mock'lanır — gerçek `LookupCatalogService`
+  doğrulama/cache mantığı testte de çalışır. Not: Testcontainers 1.21.3 + Docker 29 uyumu için surefire
+  `-Dapi.version=1.44` pin'li (pom yorumunda gerekçe).
+
+### 4.5 lookup-service ✅ (YENİ — paylaşılan katalog sahibi, ADR-002)
+- Port 8083, DB `lookup_db`. **GNL_ST ve GNL_TP tablolarının tüm sistemdeki TEK sahibi.**
+- Kendi Flyway'i workbook'taki TÜM katalog satırlarını **açık (immutable) kontrat ID'leriyle** seed'ler:
+  GNL_ST 1=ACTV, 2=PASV (GENERAL) + ORDER/PROD domain'leri; GNL_TP 1=MALE, 2=FEMALE (GENDER),
+  3=INDV, 4=ORG (PARTY_TYPE) + diğer domain'ler. **ID'ler asla yeniden numaralanmaz** (ekleme = yeni ID'li
+  forward-only migration).
+- API: `GET /api/lookups/statuses[?domain=]`, `/statuses/{code}`, `/types[?domain=]`, `/types/{code}`
+  (silinmiş katalog satırları dönmez; bilinmeyen kod = 404 `MSG-LOOKUP-NOT-FOUND`).
+- Tüketici deseni (customer-service'te `com.crm.customer.lookup`): `LookupCatalogClient` (HTTP) →
+  `LookupCatalogService` (domain doğrulama + 15dk/256 kayıt TTL cache + `LookupContract` sabitleriyle
+  kontrat-ID assert'i). Controller/repository asla doğrudan katalog çağırmaz. Kod bilinmiyorsa/yanlış
+  domain'deyse 400; katalog kapalıysa ve cache'te yoksa **yazma 503 ile fail-closed** — okuma/filtreleme
+  etkilenmez (yerel `status_id`). Hardcoded production fallback YOK (sadece testlerde interface mock'u).
+
+### 4.6 mernis-stub ✅ (YENİ — KR-10 fake MERNİS/KPS)
+- Port 8084, DB'siz. `POST /api/mernis/verify` `{nationalityId, firstName, lastName, birthDate}` →
+  `{verified: bool}`. Deterministik: 11 haneli geçerli her ID doğrulanır, **deny-list hariç**
+  (varsayılan `99999999999` — yerel "reddedildi" fikstürü; `config-repo/mernis-stub.yml`).
+  Gerçek kişisel veri kullanılmaz. customer-service `MernisClient` ile erişir; doğrulama reddi veya
+  erişilemezlik = müşteri oluşturulmaz (fail-closed).
 - **⚠️ Proje çapında önemli düzeltme:** Bu servisi yazarken **Lombok'un hiç çalışmadığı** ortaya çıktı —
   JDK 25 + bu Maven Compiler Plugin sürümü, `annotationProcessorPaths` açıkça tanımlanmadıkça artık
   `-classpath`'teki processor'leri (Lombok dahil) otomatik keşfetmiyor. `customer-service/pom.xml`'e bu
@@ -401,7 +430,11 @@ Bu bölüm "neden böyle yapıldı" sorusunun cevabıdır. Değiştirmeden önce
   yapılandırma boşluğu** — kök `pom.xml`'in `<pluginManagement>`'ına taşınması, her yeni Lombok kullanan
   servisin bunu tekrar tekrar eklemek zorunda kalmaması için mantıklı bir sonraki adım (§9'a eklendi).
 
-### 5.14 nationalityId: global DB UNIQUE kaldırıldı, ACTIVE-only kural sadece uygulama katmanında
+### 5.14 ~~nationalityId: global DB UNIQUE kaldırıldı, ACTIVE-only kural sadece uygulama katmanında~~ — GEÇERSİZ (superseded)
+
+> **⚠️ 2026-07-10 analist kararı ve ADR-003 bu bölümü GEÇERSİZ KILDI:** nationalityId artık
+> **kalıcı ve global** tekildir; DB UNIQUE kısıtı (soft-deleted satırlar dahil) geri geldi ve
+> pasif müşteri NATID'sini serbest bırakmaz. Aşağıdaki metin yalnız tarihsel kayıt olarak duruyor.
 - **Sorun:** `individuals.nationality_id` DB'de global `UNIQUE`'ti ama iş kuralı sadece "ACTIVE müşteriler
   arasında tekil" istiyordu. Bu iki kural örtüşmüyordu: bir müşteri soft-delete (PASSIVE) edildikten sonra
   aynı nationalityId ile yeni bir aktif müşteri oluşturulmaya çalışılırsa, uygulama katmanı bunu engellemiyordu
@@ -474,40 +507,34 @@ içindir ve **birebir kopyalamak hatalıdır**. Doğrulanmış farklar:
 
 ## 7. Nasıl Çalıştırılır
 
-### 7.1 IDE (mevcut ana yöntem)
-Sıra önemli (config-server artık ilk sırada; customer-service Postgres gerektirir):
-1. **config-server** → `ConfigServerApplication` Run. Doğrula: `http://localhost:8888/discovery-server/default`
-   (Config Server'ın REST API'si, `discovery-server.yml` içeriğini JSON olarak döner).
-2. **discovery-server** → `DiscoveryServerApplication` Run. Doğrula: `http://localhost:8761`.
-3. **api-gateway** → `ApiGatewayApplication` Run. Doğrula: Eureka'da `API-GATEWAY` görünür.
-4. **Postgres** → IDE'den değil, Podman/Rancher ile ayağa kaldır (bkz. §7.2'nin postgres kısmı) — `customer-service`
-   için `localhost:5432/customer_db` gerekli (`crmlite`/`crmlite`).
-5. **customer-service** → `CustomerServiceApplication` Run. Doğrula: Eureka'da `CUSTOMER-SERVICE` görünür,
-   `GET http://localhost:8082/actuator/health` → `UP`, Flyway loglarında `V1`/`V2` migration'ları uygulandığı görünür.
-6. auth-service → **şu an çalıştırılamaz** (Postgres/kod eksik).
+### 7.1 Başlatma sırası (IDE veya Maven — sıra ÖNEMLİ)
+customer-service'in **yazma** işlemleri lookup-service (ADR-002) ve mernis-stub'a (KR-10) muhtaçtır;
+bu ikisi olmadan servis açılır ve okuma çalışır ama create/update/delete 503 döner (bilinçli fail-closed).
 
-> IDE'de Maven projeleri görünmüyorsa: kök `pom.xml`'i "Add as Maven Project" / "Load Maven Project" ile ekle;
-> beş modülü otomatik tanır.
+1. **Postgres** (compose/Podman — ilk volume açılışında `customer_db` + `lookup_db` oluşur)
+2. **config-server** → doğrula: `http://localhost:8888/customer-service/default`
+3. **discovery-server** → `http://localhost:8761`
+4. **lookup-service** → `http://localhost:8083/api/lookups/statuses/ACTV` (katalog seed'li mi?)
+5. **mernis-stub** → `http://localhost:8084/actuator/health`
+6. **api-gateway** → Eureka'da `API-GATEWAY`
+7. **customer-service** → Flyway V1/V2 loglarda; `http://localhost:8082/actuator/health`
+8. auth-service → **şu an çalıştırılamaz** (iskelet).
 
 ### 7.1b Terminal / Maven (aynı sıra, ayrı terminallerde)
 ```bash
-mvn clean install -DskipTests   # tek seferlik build
+mvn clean install -DskipTests   # tek seferlik build (testli: mvn clean install — Docker gerekir)
 
-# Terminal 1
-mvn -pl backend/config-server spring-boot:run
-# Terminal 2
-mvn -pl backend/discovery-server spring-boot:run
-# Terminal 3
-mvn -pl backend/api-gateway spring-boot:run
-
-# Postgres (repo kökünden):
-docker compose -f infra/docker-compose.yml up -d postgres
+docker compose -f infra/docker-compose.yml up -d postgres   # 0) Postgres
 # Podman: podman compose -f infra/docker-compose.yml up -d postgres
 
-# Terminal 4 (Postgres ayaktayken)
-mvn -pl backend/customer-service spring-boot:run
+mvn -pl backend/config-server    spring-boot:run   # Terminal 1
+mvn -pl backend/discovery-server spring-boot:run   # Terminal 2
+mvn -pl backend/lookup-service   spring-boot:run   # Terminal 3
+mvn -pl backend/mernis-stub      spring-boot:run   # Terminal 4
+mvn -pl backend/api-gateway      spring-boot:run   # Terminal 5
+mvn -pl backend/customer-service spring-boot:run   # Terminal 6
 ```
-Detaylı curl doğrulama örnekleri için bkz. docs/customer-service.md.
+Detaylı curl doğrulama sırası: docs/api/customer-service.md; runbook: docs/runbooks/local-development.md.
 
 ### 7.2 Docker / Podman (infra/docker-compose.yml)
 Repo kökünden:
@@ -519,12 +546,14 @@ docker compose -f infra/docker-compose.yml up --build
 podman compose -f infra/docker-compose.yml up --build
 # veya: podman-compose -f infra/docker-compose.yml up --build
 ```
-İlk build birkaç dakika sürer (image + bağımlılık indirir + Postgres init script'i `customer_db`'yi oluşturur).
-Durdurma: aynı komut `down` ile. **Postgres verisini de silmek için:** `down -v` (volume'u da kaldırır).
-Not: compose artık `config-server`, `discovery-server`, `api-gateway`, `postgres`, `customer-service` içerir
-(`auth-service` henüz yok — Postgres bağımlılığı DB kurulana kadar eklenmeyecek).
+İlk build birkaç dakika sürer (image + bağımlılık indirir + Postgres init script'i `customer_db` ve
+`lookup_db`'yi oluşturur). Durdurma: aynı komut `down` ile. **Postgres verisini de silmek için:** `down -v`.
+Not: compose artık `config-server`, `discovery-server`, `api-gateway`, `postgres`, `lookup-service`,
+`mernis-stub`, `customer-service` içerir (`auth-service` henüz yok); healthcheck +
+`depends_on: service_healthy` başlatma sırasını otomatik uygular.
 
-**⚠️ Flyway/schema değişikliği sonrası (örn. bu PR'daki `nationality_id` UNIQUE kaldırma, bkz. §5.14):**
+**⚠️ Flyway/schema değişikliği sonrası (örn. 2026-07-11 workbook baseline'ı — V1/V2 YENİDEN yazıldı,
+henüz paylaşılmamış WIP commit'te olduğu için baseline replace serbest — bkz. ADR-002/003):**
 V1 migration'ı doğrudan değiştiren bir güncelleme çektiyseniz, daha önce kurulmuş bir `customer_db` Flyway'in
 checksum doğrulamasını geçemez. Volume'u sıfırlayın:
 ```bash
@@ -540,26 +569,30 @@ ardından customer-service'i yeniden başlatın (Flyway V1/V2'yi temiz şemaya u
 
 ## 8. Doğrulama (Smoke Test)
 
-config-server + discovery-server + api-gateway + postgres + customer-service ayaktayken:
-- `GET http://localhost:8888/discovery-server/default` → `discovery-server.yml` içeriği JSON olarak döner (config-server çalışıyor).
-- `GET http://localhost:8888/customer-service/default` → `customer-service.yml` içeriği döner.
-- `GET http://localhost:8761` → Eureka dashboard, `API-GATEWAY` ve `CUSTOMER-SERVICE` kayıtlı.
-- `GET http://localhost:8080/actuator/health` → `{"status":"UP"}`.
-- `GET http://localhost:8080/api/auth/login` → **503** temiz JSON (`messageKey: MSG-SERVICE-UNAVAILABLE`) —
-  auth-service ayakta değilken beklenen; route çalışıyor ve `GatewayExceptionHandler` (§4.2) doğru status'u
-  yansıtıyor demek. (Fix öncesi bu generic 500'dü — bkz. §4.2.)
-- `GET http://localhost:8080/api/customers?firstName=Ali` → gateway üzerinden customer-service'e ulaşır,
-  seed verideki iki "Ali" kaydını döner (canonical endpoint; `GET .../api/customers/search?firstName=Ali`
-  aynı sonucu veren legacy alias'tır — bkz. docs/customer-service.md için tam örnek istekler).
+Tüm stack ayaktayken (sıra: §7.1):
+- `GET http://localhost:8888/customer-service/default` → config içeriği döner (config-server çalışıyor).
+- `GET http://localhost:8761` → Eureka dashboard: `API-GATEWAY`, `LOOKUP-SERVICE`, `MERNIS-STUB`,
+  `CUSTOMER-SERVICE` kayıtlı.
+- `GET http://localhost:8080/api/lookups/statuses/ACTV` → `{"id":1,"shortCode":"ACTV",...}` —
+  merkezi katalog gateway üzerinden çalışıyor (ADR-002).
+- `GET http://localhost:8080/api/auth/login` → **503** temiz JSON — auth-service yokken beklenen
+  (`GatewayExceptionHandler`, §4.2).
+- `GET http://localhost:8080/api/customers?firstName=Ali` → seed'deki 1001 (Ali Yildiz) döner;
+  `role":"Customer"`. (`/api/customers/search` KALDIRILDI — artık alias yok.)
+- `GET http://localhost:8080/api/customers?firstName=Nur` → 1002 (Zeynep **Nur** Demir — kelime-başı
+  eşleşme middle name üzerinden, KR-01).
+- `GET http://localhost:8080/api/customers?customerId=1003` → boş (soft-deleted seed müşterisi görünmez).
+- Tam curl dizisi: docs/api/customer-service.md.
 
 ---
 
 ## 9. Sırada Ne Var (Roadmap / Öncelik)
 
-### 9.1 Bir sonraki büyük adım — customer-service çekirdeği KURULDU ✅
-`customer-service` artık ayakta (§4.4): FR-CUST-01..05 çekirdek implementasyonu, Postgres + Flyway ile.
-Kalan büyük engeller: **auth-service'in DB kurulumu** (değişmedi) ve **address-service/contact-service**
-(customer-service'in FR-CUST-03'ü tam anlamıyla tamamlaması için gerekli, henüz yok).
+### 9.1 Bir sonraki büyük adım — müşteri AGREGATI TAMAMLANDI ✅ (2026-07-11)
+`customer-service` final workbook şemasıyla FR-CUST + FR-ADDR + FR-CNTC'nin tamamını implemente ediyor
+(§4.4); paylaşılan kataloglar `lookup-service`'te (§4.5), KR-10 için `mernis-stub` (§4.6) ayakta.
+**Adres/iletişim için ayrı servis YOK ve PLANLANMIYOR** (ADR-001). Kalan büyük adımlar: auth
+(Keycloak yönü, ADR-004), account/product/order domain'leri ve frontend.
 
 ### 9.2 auth-service'i tamamlama (blokör işler)
 - [ ] PostgreSQL zaten compose'da mevcut (`customer-service` için eklendi) — auth-service aynı Postgres
@@ -575,20 +608,18 @@ Kalan büyük engeller: **auth-service'in DB kurulumu** (değişmedi) ve **addre
   `flyway-core`/`flyway-database-postgresql` zaten pom'da ama bu tek başına yetmiyor; olmadan migration'lar
   sessizce hiç çalışmaz, Hibernate boş şemaya karşı "missing table" hatasıyla çöker.
 
-### 9.3 customer-service'i tamamlama (bir sonraki iterasyon)
-- [ ] **address-service + contact-service** kurulunca FR-CUST-03'ü tam orkestrasyona genişlet (şu an sadece
-  PARTY/INDIVIDUAL/PARTY_ROLE/CUSTOMER oluşturuyor, ADDR/CNTC_MEDIUM hariç — kodda TODO yorumları mevcut).
-- [ ] **account-service/contact-service/order-service** kurulunca `checkNoUnsupportedCrossServiceSearchCriterion`'ı
-  kaldırıp accountNumber/gsmNumber/orderNumber aramasını gerçek entegrasyona çevir (şu an 501 dönüyor).
-- [ ] **product-service/account-service** kurulunca `checkCustomerHasNoActiveProducts`'ı gerçek bir çağrıya çevir
-  (şu an TODO/no-op).
-- [x] ~~`nationality_id` global UNIQUE kısıtının "sadece ACTIVE arasında unique" iş kuralıyla tam örtüşmemesi~~
-  — **çözüldü** (bkz. §4.4, §5.14): global UNIQUE kaldırıldı, tekillik tamamen uygulama katmanında.
-- [x] ~~Test yok~~ — **eklendi**: `CustomerBusinessRulesTest`, `CustomerSpecificationsTest` (gerçek Postgres'e
-  karşı `@DataJpaTest`), `GlobalExceptionHandlerTest` (bkz. §4.4). Testcontainers hâlâ kurulu değil — arama
-  testi bunun yerine zaten var olan dev Postgres'i kullanıyor.
-- [ ] Arama performansı: prefix (`LIKE 'term%'`) artık `lower()` fonksiyonel index'ten faydalanabiliyor;
-  yine de veri hacmi büyürse `pg_trgm` trigram index değerlendirilebilir (şu an gerekli değil).
+### 9.3 customer-service — kalan bilinçli TODO'lar
+- [x] ~~Adres/iletişim~~ — **TAMAMLANDI, aynı serviste** (ADR-001; ayrı address/contact-service YOK).
+- [x] ~~gsmNumber araması 501~~ — **yerel implementasyon** (CNTC_MEDIUM artık customer_db'de).
+- [x] ~~nationality_id tekillik çelişkisi~~ — **ADR-003 ile kapandı**: kalıcı global DB UNIQUE.
+- [x] ~~Testcontainers yok~~ — **kuruldu**: entegrasyon testleri gerçek PostgreSQL container'ına karşı.
+- [ ] **account/order domain'leri** kurulunca `accountNumber`/`orderNumber` aramasını 501'den gerçek
+  entegrasyona çevir (KR-02).
+- [ ] **product/account domain'leri** kurulunca `checkCustomerHasNoActiveProducts`'ı (AC-CUST-05-03) ve
+  müşteri silmede fatura hesabı pasifleştirmeyi (AC-CUST-05-04'ün kalan kısmı) gerçek çağrıya çevir.
+- [ ] `checkAddressIsNotInUse` (AC-ADDR-04-04, `MSG-ADDR-IN-USE`) — hesap/servis adresi kayıtları gelince.
+- [ ] Arama performansı: kelime-başı `'% q%'` LIKE deseni index kullanamaz — veri hacmi büyürse `pg_trgm`
+  değerlendirilmeli (şu an bootcamp ölçeğinde sorun değil).
 
 ### 9.4 config-server sertleştirme (ileride)
 - [ ] Şu an classpath/native — sırlar (DB şifresi, JWT secret) düz metin olarak jar'a gömülüyor. Gerçek ortam
@@ -617,23 +648,38 @@ Kalan büyük engeller: **auth-service'in DB kurulumu** (değişmedi) ve **addre
 - **Makinede `mvn` artık PATH'te** (önceki not güncel değildi) — `docker` ise hâlâ PATH'te değil, Podman/Rancher kullanılıyor.
 - **config-server native/classpath, sır yönetimi yok** — `config-repo` dosyaları düz metin olarak jar'a gömülüyor;
   gerçek bir DB şifresi/JWT secret girildiğinde bu düz metin git'e de gidecek demektir (bkz. §9.4).
-- **Compose 5 servis** — auth-service henüz eklenmedi (Postgres artık var, ama auth-service'in kendi kodu/migration'ı eksik).
-- **customer-service: accountNumber/gsmNumber/orderNumber araması kasıtlı olarak 501 dönüyor** — account/contact/
-  order-service entegrasyonu tamamlanana kadar (sessizce yanlış sonuç vermek yerine).
-- **customer-service: adres/iletişim orkestrasyonu yok** — `POST /api/customers` sadece PARTY/INDIVIDUAL/
-  PARTY_ROLE/CUSTOMER oluşturuyor; address-service/contact-service kurulunca genişletilecek (bkz. §9.3).
-- **customer-service: `checkCustomerHasNoActiveProducts` TODO/no-op** — product/account-service kurulunca
-  gerçek bir çağrıya çevrilecek (bkz. §4.4, §9.3).
-- **Testcontainers hâlâ kurulu değil** — `CustomerSpecificationsTest` gerçek local Postgres'e karşı çalışıyor
-  (bkz. §4.4); bu yeterli ama CI'da Postgres'in ayrıca ayakta olmasını gerektiriyor.
-- **Lombok, `annotationProcessorPaths` açıkça tanımlanmadan çalışmıyor** (JDK 25 + bu Maven Compiler Plugin
-  sürümü) — şu an sadece `customer-service/pom.xml`'de düzeltilmiş durumda (bkz. §5.9, §9.6).
+- **Compose 7 servis** — auth-service henüz eklenmedi (iskelet).
+- **PAYLAŞILAN KATALOG KURALLARI (ADR-002 — bağlayıcı):**
+  - GNL_ST ve GNL_TP **merkezi, cross-service kataloglardır**; tek sahibi `lookup-service` (`lookup_db`).
+  - customer-service'te (ve gelecekteki hiçbir serviste) **yerel GNL_ST/GNL_TP tablosu veya seed'i YOKTUR**;
+    her servis kendi DB'sine katalog kopyalamaz.
+  - Erişim yalnız onaylı API/istemci sınırından: `com.crm.customer.lookup` (`LookupCatalogClient` →
+    `LookupCatalogService`); controller/repository doğrudan katalog çağırmaz.
+  - customer_db yalnız **kararlı dış referans** saklar: kontrat-immutable merkezi ID'ler
+    (`status_id`/`gender_id`/`party_type_id`) — **cross-database FK kullanılmaz**.
+  - Katalog erişilemezse davranış açıktır: **yazma işlemleri 503 ile fail-closed** (kısmi kayıt kalmaz,
+    bilinmeyen kod sessizce kabul edilmez); okuma/aktif-filtreleme yerel `status_id + deleted_date`
+    üzerinden çalışmaya devam eder.
+- **customer-service: accountNumber/orderNumber araması kasıtlı 501** — account/order domain'leri kurulana
+  kadar (gsmNumber artık YEREL ve çalışıyor).
+- **customer-service: `checkCustomerHasNoActiveProducts` + fatura hesabı pasifleştirme + `MSG-ADDR-IN-USE`
+  kontrolü TODO/no-op** — ilgili domain'ler kurulunca gerçek çağrıya çevrilecek (bkz. §9.3). Bu kontrollerin
+  "yapıldığı" HİÇBİR yerde iddia edilmiyor.
+- **Testcontainers kurulu** — entegrasyon testleri Docker gerektirir; Docker kapalıysa yalnız o test
+  sınıfları düşer (birim testleri etkilenmez). Surefire `-Dapi.version=1.44` pin'i: Testcontainers 1.21.3'ün
+  gömülü docker-java'sı Docker 29 motoruna eski API versiyonuyla ping atıyor (bkz. pom yorumları).
+- **Lombok `annotationProcessorPaths` düzeltmesi** artık customer-service + lookup-service + mernis-stub
+  pom'larında (JDK 25 tuzağı, bkz. §5.9); kök `<pluginManagement>`'a taşımak hâlâ mantıklı bir iyileştirme.
 
 ---
 
 ## 11. AI Agent İçin Hızlı Başlangıç Notları
 
 - Bu dosyayı ve `§5` (kararlar) + `§6` (WebMVC tuzağı) bölümlerini **kod önermeden önce** oku.
+- **Bağlayıcı mimari kararlar `docs/architecture/adr/`'de** (ADR-001 agregat sınırı, ADR-002 merkezi
+  GNL katalogları, ADR-003 kalıcı NATID tekilliği, ADR-004 Keycloak yönü) — bunlarla çelişen eski
+  metinler (bu dosyanın tarihsel bölümleri, use-case dokümanı, draw.io) geçersizdir.
+- Final gereksinimler `docs/source/requirements`'ta; `Final` adlı dosyalar eskileri ezer (CLAUDE.md).
 - Gateway ile ilgili herhangi bir şey yaparken WebFlux örneği kopyalama — §6 tablosuna uy.
 - Docker/Compose ile ilgili değişiklikte **root build context** kuralını (§5.2) koru.
 - Yeni servis = kök POM `<modules>` + parent bağlama + root-context Dockerfile.

@@ -1,353 +1,194 @@
-# customer-service
+# customer-service API
 
-Müşteri çekirdek CRUD servisi (FR-CUST-01..05). Port `8082`. Diğer servislerle aynı desen: config-server'dan
-`spring.config.import` ile config çeker, Eureka'ya kayıt olur, gateway üzerinden `/api/customers/**` ile
-dışarı açılır.
+Customer aggregate service (FR-CUST, FR-ADDR, FR-CNTC). Port **8082**, database
+`customer_db`. Public path through the gateway: `http://localhost:8080/api/...`.
+All examples below go through the gateway.
 
-## Kapsam ve bilinen sınırlamalar
+**Identifiers:** every public `{customerNumber}` path variable and the `customerId`
+search parameter are the **business customer number** (`CUST.customer_number`, seeds
+start at 1001). The internal database id is never exposed.
 
-- **FR-CUST-03 sadece çekirdek oluşturma**: `POST /api/customers` yalnızca PARTY/INDIVIDUAL/PARTY_ROLE/CUSTOMER
-  kayıtlarını oluşturur. Adres (`ADDR`) ve iletişim (`CNTC_MEDIUM`) bu serviste **yok** — address-service ve
-  contact-service kurulunca orkestrasyon eklenecek (kodda `TODO` yorumlarıyla işaretli).
-- **accountNumber / gsmNumber / orderNumber araması henüz desteklenmiyor**: arama endpoint'lerine bu
-  parametrelerden biri verilirse, sessizce yanlış/eksik sonuç dönmek yerine **501 Not Implemented** +
-  `MSG-FEATURE-NOT-IMPLEMENTED` döner. account/contact/order-service kurulunca gerçek entegrasyona çevrilecek.
-- **Ürün kontrolü olmadan silme**: `DELETE /api/customers/{id}` öncesi çağrılan
-  `checkCustomerHasNoActiveProducts` şu an her zaman geçiyor (product-service yok, TODO/no-op).
-- **auth/JWT gateway güvenliği geçici olarak açık**: `api-gateway`'in `SecurityConfig`'i şu an `permitAll` —
-  auth-service implement edilene kadar hiçbir endpoint (customer-service dahil) kimlik doğrulaması istemiyor.
+## Endpoints
 
-## Endpoint'ler
-
-| Metod | Path | Açıklama |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/api/customers` | **Tercih edilen** arama endpoint'i (bkz. aşağıdaki query param'lar) |
-| GET | `/api/customers/search` | Arama — geriye dönük uyumluluk için tutulan **legacy alias**, yeni parametrelerle birebir aynı davranır |
-| GET | `/api/customers/{customerId}` | Detay görüntüleme |
-| POST | `/api/customers` | Müşteri çekirdeği oluşturma |
-| PUT | `/api/customers/{customerId}` | Müşteri çekirdeği güncelleme |
-| DELETE | `/api/customers/{customerId}` | Soft delete (204 No Content) |
+| GET | `/api/customers` | **Canonical (and only) search endpoint.** The old `/api/customers/search` alias was removed. |
+| GET | `/api/customers/{customerNumber}` | Detail (active customers only; else 404 `MSG-CUST-NOT-FOUND`) |
+| POST | `/api/customers` | Atomic create (demographic + addresses + contact) |
+| PUT | `/api/customers/{customerNumber}` | Demographic update |
+| DELETE | `/api/customers/{customerNumber}` | Soft delete of the whole aggregate (204) |
+| GET | `/api/customers/{customerNumber}/addresses` | Active addresses |
+| POST | `/api/customers/{customerNumber}/addresses` | Add address (first one becomes primary automatically) |
+| PUT | `/api/customers/{customerNumber}/addresses/{addressId}` | Update address fields |
+| DELETE | `/api/customers/{customerNumber}/addresses/{addressId}` | Soft delete (guards: last address 409 `MSG-ADDR-LAST-DELETE`, primary 409 `MSG-ADDR-PRIMARY-DELETE`) |
+| PATCH | `/api/customers/{customerNumber}/addresses/{addressId}/primary` | Make primary (demotes the previous one) |
+| GET | `/api/customers/{customerNumber}/contact-medium` | Contact info |
+| PUT | `/api/customers/{customerNumber}/contact-medium` | Update contact info |
+| GET | `/api/cities` · `/api/cities/{cityId}/districts` | Cascading address dropdown data |
 
-> **Not:** Bir servis-endpoint dokümanında `GET /customers`, `POST /customers` gibi kök path'ler geçebilir;
-> gateway'in public path'i her zaman `/api/customers/**` olduğu için buradaki tüm örnekler bunu kullanır.
+## Search (`GET /api/customers`) — KR-01 semantics
 
-### Arama query param'ları
-`firstName`, `lastName`, `nationalityId`, `customerId`, `accountNumber`, `gsmNumber`, `orderNumber`,
-`page` (varsayılan 0), `size` (varsayılan 20, sıralama `firstName ASC, lastName ASC`).
-En az bir tanesi (`firstName`/`lastName`/`nationalityId`/`customerId`) verilmeli, aksi halde 400 +
-`MSG-SEARCH-CRITERIA-REQUIRED`.
+Query parameters: `firstName`, `lastName`, `nationalityId`, `customerId`,
+`gsmNumber`, `accountNumber`, `orderNumber`, `page` (default 0), `size` (default 20).
 
-**Arama davranışı (önemli):**
-- `firstName`/`lastName` **prefix** (baştan eşleşme) araması yapar, `contains` değil:
-  `lower(firstName) LIKE lower(:firstName) || '%'`. Yani `firstName=li` ne "Ali" ne "Velihan" döner;
-  `firstName=Al` ise "Ali" ile başlayan kayıtları döner.
-- `firstName` ayrıca **middleName**'in de prefix'ini eşler — `firstName=Can` "Ali Can Kaya"yı bulur
-  (middleName="Can"), `firstName=Ali` da aynı kaydı firstName üzerinden bulur.
-- `firstName` ve `lastName` birlikte verilirse tek bir isim kriteri olarak **AND**'lenir; bu kriter
-  `nationalityId`/`customerId` ile **OR**'lanır (bkz. `CustomerSpecifications`).
-- Sadece `ACTIVE` müşteriler döner (soft-delete edilmiş `PASSIVE` müşteriler asla görünmez).
+- At least one criterion required, else 400 `MSG-SEARCH-CRITERIA-REQUIRED`.
+- `firstName` matches **word-start, case-insensitive, over First + Middle Name
+  combined**: `Kemal` finds "Ali Kemal"; `Nur` finds "Zeynep Nur"; `li` does NOT find "Ali".
+- `lastName` matches word-start over Last Name only. Both present ⇒ AND-ed.
+- `gsmNumber` is a prefix match on the mobile phone (CNTC_MEDIUM is local now — no 501).
+- `nationalityId` and `customerId` match exactly.
+- Filled criterion groups are **OR-ed**; results are always distinct customers.
+- Only **active** customers return (soft-deleted are invisible).
+- Sorted firstName → lastName; 20 per page, server-side.
+- `accountNumber`/`orderNumber` ⇒ **501 `MSG-FEATURE-NOT-IMPLEMENTED`** until the
+  account/order domains exist.
+- Numeric fields reject non-numeric input with 400.
 
-## Türkçe karakter desteği (ÇĞİÖŞÜçğıöşü)
+Result row: `{customerId, firstName, middleName, lastName, role, nationalityId}` —
+`role` is the display name `"Customer"` (ROLE.role_name), `customerId` is the business number.
 
-Türkçe isimler (`Gözek`, `Öztürk`, `Şahin`, `Çağla`, `İrem`, ...) API tarafında tam destekleniyor —
-`VR-NAME` regex'i (`^[A-Za-zÇĞİÖŞÜçğıöşü]+( [A-Za-zÇĞİÖŞÜçğıöşü]+)*$`) bu karakterleri kabul ediyor,
-JSON gövdesi UTF-8 olarak doğru okunuyor ve doğru geri dönüyor.
+## Atomic create (`POST /api/customers`)
 
-**Eğer Türkçe karakterli bir istek "Malformed request body" / `MSG-VALIDATION-ERROR` ile 400 dönerse,
-bu servis kodunda bir hata DEĞİL, neredeyse her zaman bir shell/terminal encoding sorunudur:**
-Windows + Git Bash üzerinde `curl`, komut satırı argümanlarını (`-d '...'` ile) native bir Win32
-programına (mingw-w64 derlemesi) geçirirken, aktif kod sayfası (`chcp`) ve `LANG`/`LC_ALL` ayarlı
-değilse, UTF-8 çok baytlı karakterler (`ö` = `0xC3 0xB6`) tek, geçersiz bir bayta dönüşebilir —
-curl bu bozuk baytı olduğu gibi gönderir, sunucu da (haklı olarak) geçersiz UTF-8'i reddeder.
-`GlobalExceptionHandler` artık kök nedeni (gerçek Jackson `StreamReadException`'ı) sunucu loglarına
-tam olarak yazıyor; log'da `Invalid UTF-8 middle byte ...` görürseniz bu senaryodur.
-
-**Çözüm — gövdeyi argüman değil, stdin üzerinden gönderin:**
-
-```bash
-curl -X POST "http://localhost:8080/api/customers" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary @- <<'JSON'
-{
-  "firstName": "Velihan",
-  "lastName": "Gözek",
-  "birthDate": "1992-03-15",
-  "gender": "Male",
-  "nationalityId": "10000000004"
-}
-JSON
-```
-
-Heredoc/stdin (`--data-binary @-`), bash'in dahili UTF-8 işleyişini kullanır ve native bir programın
-argv dönüşümünden geçmez, bu yüzden Türkçe karakterler bozulmadan iletilir. **Postman kullanıyorsanız**
-bu sorun hiç yaşanmaz — Postman gövdeyi doğrudan UTF-8 olarak gönderir, `-d`'nin argv sorunu sadece
-komut satırından native curl çağırırken ortaya çıkar.
-
-Postman/GUI body örneği (aynı JSON, tek satır):
-```json
-{"firstName":"Velihan","lastName":"Gözek","birthDate":"1992-03-15","gender":"Male","nationalityId":"10000000004"}
-```
-
-## Gender alanı
-
-API'de `gender` alanı büyük/küçük harf duyarsız kabul edilir (`"male"`, `"MALE"`, `"Male"` hepsi geçerli)
-ama yanıt her zaman `"Male"`/`"Female"` olarak döner (bkz. `Gender` enum, `@JsonCreator`/`@JsonValue`).
-Geçersiz bir değer (`"gender": "Unknown"` gibi) temiz bir 400 döner:
 ```json
 {
-  "message": "Request validation failed",
-  "messageKey": "MSG-VALIDATION-ERROR",
-  "validationErrors": {"gender": "Invalid gender value: Unknown"}
+  "demographic": {
+    "firstName": "Velihan", "middleName": null, "lastName": "Gözek",
+    "fatherName": null, "motherName": null,
+    "birthDate": "1992-03-15", "gender": "Male", "nationalityId": "10000000004"
+  },
+  "addresses": [
+    { "cityId": 1, "districtId": 1, "street": "Example Street",
+      "houseFlatNumber": "10/2", "addressDescription": "Home", "primary": true }
+  ],
+  "contactMedium": {
+    "email": "velihan@example.com", "homePhone": null,
+    "mobilePhone": "05321112233", "fax": null
+  }
 }
 ```
 
-## Role gösterimi
+Pipeline (single transaction — any failure persists **nothing**):
 
-Arama ve detay yanıtlarındaki `role` alanı `role.name` kullanır ("Customer"), `role.code` ("CUSTOMER")
-değil — dahili lookup'lar için `role.code` hâlâ kullanılabilir ama API'ye hiç sızmıyor.
+1. Bean validation: VR-NAME (Turkish letters ÇĞİÖŞÜçğıöşü supported, 1–50, trimmed
+   first), VR-NATID, VR-EMAIL, VR-PHONE/VR-MOBILE; ≥1 address; email+mobile required.
+2. Business rules: birth date not future (`MSG-VAL-BIRTHDATE`), age ≥ 18
+   (`MSG-VAL-AGE-MIN`), Nationality ID **globally & permanently** unique — soft-deleted
+   customers still block it (409 `MSG-CUST-DUP-NATID`, ADR-003); exactly one primary
+   address after normalization; district must belong to the selected city.
+3. Shared catalog resolution (ADR-002): `ACTV`, `INDV`, gender `MALE`/`FEMALE`
+   resolved and domain-validated through lookup-service. Unknown code ⇒ 400 with field
+   detail; catalog unreachable ⇒ **503 `MSG-SERVICE-UNAVAILABLE`** (fail closed).
+4. MERNIS verification (KR-10) via mernis-stub: rejected ⇒ 400
+   `MSG-NATID-VERIFY-FAILED`; unreachable ⇒ 503. Customer is NOT created in either case.
+5. Persist PARTY → IND → PARTY_ROLE → CUST (sequence-assigned `customerNumber`)
+   → ADDR rows → CNTC_MEDIUM. Returns **201** with the detail payload.
 
-## nationalityId tekilliği (ACTIVE-only)
+Detail payload: `{customerNumber, firstName, middleName, lastName, fatherName,
+motherName, birthDate, gender, nationalityId, role, status}` — `gender` is
+`"Male"/"Female"`, `status` is the GNL_ST short code (`ACTV`).
 
-`nationalityId` sadece **ACTIVE müşteriler arasında** tekildir; bu kural tamamen uygulama katmanında
-(`CustomerBusinessRules.checkNationalityIdIsUniqueForCreate/ForUpdate`) uygulanır. `individuals.nationality_id`
-kolonunda artık **global bir DB UNIQUE kısıtı yok** (bilinçli tercih — status alanı individuals'ta değil
-customers/party_roles/parties'te olduğu için, cross-table bir partial unique index olmadan DB seviyesinde
-"sadece ACTIVE'ler arasında unique" ifade edilemez). Sonuç: bir müşteri soft-delete edildikten sonra aynı
-nationalityId ile **yeni bir aktif müşteri oluşturulabilir** — eski (PASSIVE) kayıt DB'de durmaya devam
-eder ama artık hiçbir constraint'e takılmaz.
+## Error response shape (all endpoints)
 
-- Aktif bir müşteriyle çakışan `nationalityId` → temiz **409** + `MSG-CUST-DUP-NATID`.
-- Uygulama katmanındaki kontrolü aşan (yarış durumu gibi) beklenmedik bir DB constraint çakışması olursa,
-  `GlobalExceptionHandler`'daki `DataIntegrityViolationException` handler'ı bunu genel bir 500 yerine
-  yine temiz bir **409** + `MSG-CUST-DUP-NATID`'e çevirir (defense in depth).
-
-**⚠️ Önemli — DB migration'ı değişti (V1):** `individuals.nationality_id` kolonundaki `UNIQUE` kısıtı
-`V1__create_customer_tables.sql`'den kaldırıldı. Bu servis henüz merge/push edilmediği ve local/dev
-aşamasında olduğu için V1 doğrudan değiştirildi (yeni bir V3 migration yerine). **Bu değişikliği çekip
-daha önce customer_db'yi kurmuş bir geliştirici, Flyway'in checksum doğrulamasını geçmek için Postgres
-volume'unu sıfırlamalı:**
-
-```bash
-docker compose -f infra/docker-compose.yml down -v
-docker compose -f infra/docker-compose.yml up -d postgres
-# ardından customer-service'i yeniden başlat (Flyway V1/V2'yi temiz şemaya uygular)
-
-# Podman eşleniği:
-podman compose -f infra/docker-compose.yml down -v
-podman compose -f infra/docker-compose.yml up -d postgres
+```json
+{
+  "timestamp": "…", "status": 409, "error": "Conflict",
+  "messageKey": "MSG-CUST-DUP-NATID",
+  "message": "A customer already exists with this Nationality ID",
+  "path": "/api/customers", "validationErrors": null
+}
 ```
 
-Compose kullanmıyorsanız (postgres'e doğrudan bağlıysanız), aynı etkiyi customer_db şemasını
-sıfırlayarak da alabilirsiniz: `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` (customer_db'ye
-bağlıyken çalıştırın), sonra customer-service'i yeniden başlatın.
+DB constraint races (e.g. duplicate NAT ID) map to **409**, never 500. Stack traces
+never leak; root causes go to server logs.
 
-## Nasıl Çalıştırılır
+## curl test sequence (dependency order)
 
-### Maven ile (IntelliJ/terminal)
-
-Build (test'ler dahil değil, hızlı):
-```bash
-mvn clean install -DskipTests
-```
-
-Çalıştırma sırası önemli — repo kökünden, her biri **ayrı bir terminalde**:
+> Windows/Git Bash note: send JSON via `--data-binary @-` heredocs (as below), not
+> `-d '...'` — native curl mangles Turkish characters passed as command-line arguments.
 
 ```bash
-# Terminal 1
-mvn -pl backend/config-server spring-boot:run
-
-# Terminal 2
-mvn -pl backend/discovery-server spring-boot:run
-
-# Terminal 3
-mvn -pl backend/api-gateway spring-boot:run
-
-# Postgres (Rancher/Docker):
-docker compose -f infra/docker-compose.yml up -d postgres
-# Podman:
-podman compose -f infra/docker-compose.yml up -d postgres
-# veya: podman-compose -f infra/docker-compose.yml up -d postgres
-
-# Terminal 4 (postgres ayaktayken)
-mvn -pl backend/customer-service spring-boot:run
-```
-
-IntelliJ'den çalıştırıyorsanız aynı sırayı koruyun (1→2→3→Postgres→4); `CustomerServiceApplication`'ı
-Postgres ayakta değilken çalıştırırsanız Flyway/Hikari datasource hatasıyla açılış başarısız olur.
-
-**Flyway/schema değişikliği sonrası temiz başlangıç gerekiyorsa** (bkz. yukarıdaki nationalityId notu):
-```bash
-docker compose -f infra/docker-compose.yml down -v
-docker compose -f infra/docker-compose.yml up -d postgres
-# Podman eşleniği:
-podman compose -f infra/docker-compose.yml down -v
-podman compose -f infra/docker-compose.yml up -d postgres
-```
-ardından customer-service'i yeniden başlatın.
-
-### Docker / Podman Compose ile (tüm stack)
-
-```bash
-docker compose -f infra/docker-compose.yml up --build
-# Podman:
-podman compose -f infra/docker-compose.yml up --build
-# veya: podman-compose -f infra/docker-compose.yml up --build
-```
-
-## Doğrulama / Test Örnekleri
-
-Aşağıdaki sıra ile test edilmesi önerilir (her adım bir öncekinin ayakta olduğunu varsayar).
-
-**A) Health check'ler**
-```bash
+# A) health (start order: postgres, config-server, discovery, lookup, mernis, gateway, customer)
 curl http://localhost:8888/actuator/health
 curl http://localhost:8761/actuator/health
+curl http://localhost:8083/actuator/health
+curl http://localhost:8084/actuator/health
 curl http://localhost:8080/actuator/health
 curl http://localhost:8082/actuator/health
-```
 
-**B) Gateway route smoke test**
-```bash
-curl "http://localhost:8080/api/customers?firstName=Ali"
-```
+# B) shared catalog through the gateway (ADR-002)
+curl http://localhost:8080/api/lookups/statuses/ACTV
+curl "http://localhost:8080/api/lookups/types?domain=GENDER"
 
-**C) Prefix arama testleri**
-```bash
-curl "http://localhost:8080/api/customers?firstName=Ali"   # Ali, Ali Can Kaya
-curl "http://localhost:8080/api/customers?firstName=Al"    # aynı ikisi (prefix)
-curl "http://localhost:8080/api/customers?firstName=li"    # BOŞ - Ali/Velihan dönmemeli
-```
+# C) reference data
+curl http://localhost:8080/api/cities
+curl http://localhost:8080/api/cities/1/districts
 
-**D) middleName araması**
-```bash
-curl "http://localhost:8080/api/customers?firstName=Can"   # Ali Can Kaya (middleName=Can üzerinden)
-```
+# D) search semantics (seed: 1001 Ali Yildiz, 1002 Zeynep Nur Demir, 1003 soft-deleted)
+curl "http://localhost:8080/api/customers?firstName=Ali"        # 1001
+curl "http://localhost:8080/api/customers?firstName=Nur"        # 1002 via middle name
+curl "http://localhost:8080/api/customers?firstName=li"         # empty (word-start!)
+curl "http://localhost:8080/api/customers?lastName=De"          # 1002
+curl "http://localhost:8080/api/customers?nationalityId=12345678901"   # 1001
+curl "http://localhost:8080/api/customers?customerId=1001"      # 1001
+curl "http://localhost:8080/api/customers?gsmNumber=0532"       # 1001
+curl "http://localhost:8080/api/customers?customerId=1003"      # empty (soft-deleted)
+curl -i "http://localhost:8080/api/customers?nationalityId=abc" # 400 numeric-only
+curl -i "http://localhost:8080/api/customers?accountNumber=0101112900"  # 501
+curl -i "http://localhost:8080/api/customers/search?firstName=Ali"      # alias removed (400/404)
 
-**E) lastName araması**
-```bash
-curl "http://localhost:8080/api/customers?lastName=Ka"     # Kaya ile başlayanlar
-```
+# E) detail
+curl http://localhost:8080/api/customers/1001
 
-**F) nationalityId araması**
-```bash
-curl "http://localhost:8080/api/customers?nationalityId=10000000003"
-```
-
-**G) Geçersiz (sayısal olmayan) nationalityId → 400**
-```bash
-curl "http://localhost:8080/api/customers?nationalityId=abc"
-```
-
-**H) Detay**
-```bash
-curl "http://localhost:8080/api/customers/1"
-```
-
-**I) Türkçe karakterli oluşturma (UTF-8 güvenli, Git Bash/Linux/macOS)**
-```bash
+# F) atomic create with Turkish characters
 curl -X POST "http://localhost:8080/api/customers" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary @- <<'JSON'
+  -H "Content-Type: application/json; charset=utf-8" --data-binary @- <<'JSON'
 {
-  "firstName": "Velihan",
-  "lastName": "Gözek",
-  "birthDate": "1992-03-15",
-  "gender": "Male",
-  "nationalityId": "10000000004"
+  "demographic": {"firstName":"Velihan","lastName":"Gözek","birthDate":"1992-03-15",
+                  "gender":"Male","nationalityId":"10000000004"},
+  "addresses": [{"cityId":1,"districtId":1,"street":"Example Street",
+                 "houseFlatNumber":"10/2","addressDescription":"Home","primary":true}],
+  "contactMedium": {"email":"velihan@example.com","mobilePhone":"05321112233"}
 }
 JSON
-```
-Postman/GUI body (tek satır, aynı içerik):
-```json
-{"firstName":"Velihan","lastName":"Gözek","birthDate":"1992-03-15","gender":"Male","nationalityId":"10000000004"}
-```
+# expect: 201, customerNumber 1004, role "Customer", status "ACTV"
 
-**J) Aynı nationalityId ile tekrar oluşturma → 409**
-```bash
-curl -X POST "http://localhost:8080/api/customers" \
-  -H "Content-Type: application/json" \
-  -d '{"firstName":"Ayla","lastName":"Oz","birthDate":"1992-03-15","gender":"Female","nationalityId":"10000000004"}'
-```
-Beklenen: `409` + `MSG-CUST-DUP-NATID`.
+# G) duplicate Nationality ID (ADR-003) — repeat F (409); then try 34567890123,
+#    which belongs to SOFT-DELETED customer 1003: still 409 MSG-CUST-DUP-NATID.
 
-**K) Güncelleme**
-```bash
-curl -X PUT "http://localhost:8080/api/customers/1" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary @- <<'JSON'
-{
-  "firstName": "Ali",
-  "middleName": "Can",
-  "lastName": "Kaya",
-  "birthDate": "1990-05-10",
-  "gender": "Male",
-  "nationalityId": "10000000001"
-}
+# H) MERNIS rejection fixture: nationalityId 99999999999 is deny-listed in
+#    mernis-stub -> 400 MSG-NATID-VERIFY-FAILED, nothing persisted.
+
+# I) addresses
+curl http://localhost:8080/api/customers/1001/addresses
+curl -X POST http://localhost:8080/api/customers/1001/addresses \
+  -H "Content-Type: application/json" --data-binary @- <<'JSON'
+{"cityId":2,"districtId":3,"street":"Yeni Cad.","houseFlatNumber":"7","addressDescription":"Is"}
 JSON
+# PATCH .../addresses/{id}/primary  -> switch primary
+# DELETE the primary while others exist -> 409 MSG-ADDR-PRIMARY-DELETE
+# DELETE the only remaining address    -> 409 MSG-ADDR-LAST-DELETE
+
+# J) contact medium
+curl http://localhost:8080/api/customers/1001/contact-medium
+curl -X PUT http://localhost:8080/api/customers/1001/contact-medium \
+  -H "Content-Type: application/json" --data-binary @- <<'JSON'
+{"email":"ali.yeni@example.com","mobilePhone":"05327778899","homePhone":"02161112233"}
+JSON
+
+# K) soft delete + invisibility
+curl -i -X DELETE http://localhost:8080/api/customers/1004     # 204
+curl -i http://localhost:8080/api/customers/1004               # 404 MSG-CUST-NOT-FOUND
+curl "http://localhost:8080/api/customers?customerId=1004"     # empty
+
+# L) catalog-down behaviour (stop lookup-service first)
+#    POST /api/customers -> 503 MSG-SERVICE-UNAVAILABLE, nothing persisted;
+#    GET  /api/customers?firstName=Ali still works (reads filter locally, ADR-002).
 ```
 
-**L) Soft delete**
-```bash
-curl -X DELETE -i "http://localhost:8080/api/customers/1"
-```
-Beklenen: `204 No Content`.
+## Known limitations (intentional, documented)
 
-**M) Silinen müşterinin görünmediğini doğrula**
-```bash
-curl "http://localhost:8080/api/customers?customerId=1"
-```
-Beklenen: boş sonuç (müşteri artık `PASSIVE`, arama sadece `ACTIVE` döner).
-
-**N) Desteklenmeyen cross-service arama → 501**
-```bash
-curl "http://localhost:8080/api/customers?gsmNumber=05321112233"
-```
-Beklenen: `501` + `MSG-FEATURE-NOT-IMPLEMENTED`.
-
-## Hata Yanıtı Formatı
-
-```json
-{
-  "timestamp": "2026-07-09T16:45:20.260Z",
-  "status": 409,
-  "error": "Conflict",
-  "messageKey": "MSG-CUST-DUP-NATID",
-  "message": "nationalityId is already used by an active customer: 10000000004",
-  "path": "/api/customers",
-  "validationErrors": null
-}
-```
-
-`GlobalExceptionHandler` şu durumları tutarlı bu şekle çevirir: `BusinessException`,
-`MethodArgumentNotValidException`, `ConstraintViolationException`, `MethodArgumentTypeMismatchException`,
-`HttpMessageNotReadableException` (malformed JSON / geçersiz enum — kök neden her zaman sunucu loglarına
-yazılır, stack trace asla response'a sızmaz), `DataIntegrityViolationException` (409'a çevrilir) ve
-son bir `Exception` catch-all'ı (500, "Unexpected error", detaylar sadece logda).
-
-## Seed Veri (V2 migration)
-
-| customerId | firstName | middleName | lastName | nationalityId |
-|---|---|---|---|---|
-| 1 | Ali | - | Yilmaz | 10000000001 |
-| 2 | Ayse | - | Demir | 10000000002 |
-| 3 | Ali | Can | Kaya | 10000000003 |
-
-"Ali" (customer 1) ve "Ali Can Kaya" (customer 3) bilinçli olarak eklendi: `firstName=Ali` ikisini de
-döner (customer 3 firstName üzerinden), `firstName=Can` sadece customer 3'ü döner (middleName üzerinden).
-
-## Testler
-
-`src/test/java` altında:
-- `CustomerBusinessRulesTest` — iş kuralları için saf birim testleri (Mockito ile repository mock'lanır,
-  DB gerektirmez).
-- `CustomerSpecificationsTest` — gerçek local Postgres'e karşı çalışan bir `@DataJpaTest` (Testcontainers
-  bu projede henüz kurulu değil; en pratik yol zaten çalışan dev Postgres'i kullanmaktı). Sadece Postgres'in
-  ayakta olmasını gerektirir, config-server'a ihtiyaç duymaz (`src/test/resources/application.yml` bunu
-  devre dışı bırakır). Her test kendi `@Transactional` rollback'iyle temizlenir, seed veriye dokunmaz.
-- `GlobalExceptionHandlerTest` — her exception handler'ın doğru status/messageKey/mesaj eşlemesi yaptığını
-  ve hiçbir zaman stack trace/iç detay sızdırmadığını doğrular.
-
-Çalıştırma (Postgres ayaktayken):
-```bash
-mvn -pl backend/customer-service test
-```
+- `accountNumber`/`orderNumber` search → 501 until account/order domains exist.
+- Active-product check before delete and billing-account passivation → future
+  account/product domains (TODO, no-op today).
+- Address in-use check (`MSG-ADDR-IN-USE`) → no-op until account/service addresses exist.
+- Gateway security is `permitAll` until authentication lands (ADR-004).

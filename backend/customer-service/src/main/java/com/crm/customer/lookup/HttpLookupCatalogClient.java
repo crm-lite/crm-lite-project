@@ -1,6 +1,7 @@
 package com.crm.customer.lookup;
 
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -11,8 +12,8 @@ public class HttpLookupCatalogClient implements LookupCatalogClient {
 
     private final RestClient restClient;
 
-    public HttpLookupCatalogClient(RestClient.Builder loadBalancedRestClientBuilder, LookupCatalogProperties properties) {
-        this.restClient = loadBalancedRestClientBuilder.baseUrl(properties.baseUrl()).build();
+    public HttpLookupCatalogClient(@Qualifier("lookupRestClient") RestClient lookupRestClient) {
+        this.restClient = lookupRestClient;
     }
 
     @Override
