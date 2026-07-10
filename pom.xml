@@ -28,6 +28,7 @@
         <module>backend/discovery-server</module>
         <module>backend/auth-service</module>
         <module>backend/api-gateway</module>
+        <module>backend/customer-service</module>
     </modules>
 
     <dependencyManagement>

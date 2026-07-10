@@ -1,0 +1,19 @@
+# Test-only overrides. Deliberately disables spring.config.import (no config-server needed to
+# run tests) and points straight at the local dev Postgres - the same one docker-compose/Podman
+# starts for normal local development. Only Postgres needs to be up for these tests to run.
+spring:
+  cloud:
+    config:
+      enabled: false
+  config:
+    import: ""
+  datasource:
+    url: jdbc:postgresql://localhost:5432/customer_db
+    username: crmlite
+    password: crmlite
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration

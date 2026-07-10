@@ -17,3 +17,9 @@ Thumbs.db
 
 # Maven wrapper (kept minimal; wrapper jars are downloaded on demand)
 !.mvn/wrapper/maven-wrapper.properties
+
+# Claude
+.claude/settings.local.json
+
+# Environment variables
+.env
