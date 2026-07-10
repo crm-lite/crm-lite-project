@@ -1,5 +1,6 @@
 package com.crm.customer.customer.entity;
 
+import com.crm.customer.common.entity.StatusAwareEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -8,19 +9,17 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+/** Local ROLE lookup (workbook: id, role_name). Seeded: 1 = "Customer". */
 @Entity
-@Table(name = "roles")
+@Table(name = "role")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Role {
+public class Role extends StatusAwareEntity {
 
     @Id
     private Long id;
 
-    @Column(name = "code", nullable = false, unique = true)
-    private String code;
-
-    @Column(name = "name", nullable = false)
-    private String name;
+    @Column(name = "role_name", nullable = false, length = 100)
+    private String roleName;
 }

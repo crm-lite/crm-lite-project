@@ -3,8 +3,8 @@ package com.crm.customer.customer.rules;
 import com.crm.customer.common.exception.BusinessException;
 import com.crm.customer.common.exception.MessageKeys;
 import com.crm.customer.customer.entity.Customer;
-import com.crm.customer.customer.entity.Status;
 import com.crm.customer.customer.repository.CustomerRepository;
+import com.crm.customer.customer.repository.IndividualRepository;
 import java.time.LocalDate;
 import java.time.Period;
 import lombok.RequiredArgsConstructor;
@@ -19,56 +19,64 @@ public class CustomerBusinessRules {
     private static final int MIN_AGE = 18;
 
     private final CustomerRepository customerRepository;
+    private final IndividualRepository individualRepository;
 
-    public void checkAtLeastOneSearchCriterionExists(String firstName, String lastName, String nationalityId, Long customerId) {
+    public void checkAtLeastOneSearchCriterionExists(String firstName, String lastName, String nationalityId,
+                                                     Long customerNumber, String gsmNumber) {
         boolean anyProvided = StringUtils.hasText(firstName)
                 || StringUtils.hasText(lastName)
                 || StringUtils.hasText(nationalityId)
-                || customerId != null;
+                || customerNumber != null
+                || StringUtils.hasText(gsmNumber);
         if (!anyProvided) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, MessageKeys.SEARCH_CRITERIA_REQUIRED,
                     "At least one search criterion must be provided");
         }
     }
 
-    // TODO: accountNumber/gsmNumber/orderNumber will be implemented once account-service,
-    // contact-service, and order-service exist and can be integrated with for these lookups.
-    public void checkNoUnsupportedCrossServiceSearchCriterion(String accountNumber, String gsmNumber, String orderNumber) {
-        if (StringUtils.hasText(accountNumber) || StringUtils.hasText(gsmNumber) || StringUtils.hasText(orderNumber)) {
+    // TODO (intentional): accountNumber/orderNumber resolve to CUST_ACCT / CUST_ORD,
+    // which belong to the future account/order domains. Until those exist this returns
+    // an explicit 501 instead of silently wrong results. gsmNumber is now local
+    // (CNTC_MEDIUM is owned by customer-service) and searchable.
+    public void checkNoUnsupportedCrossServiceSearchCriterion(String accountNumber, String orderNumber) {
+        if (StringUtils.hasText(accountNumber) || StringUtils.hasText(orderNumber)) {
             throw new BusinessException(HttpStatus.NOT_IMPLEMENTED, MessageKeys.FEATURE_NOT_IMPLEMENTED,
-                    "Search by accountNumber/gsmNumber/orderNumber is not implemented yet");
+                    "Search by accountNumber/orderNumber is not implemented yet");
         }
     }
 
-    public Customer checkCustomerExistsAndActive(Long customerId) {
-        Customer customer = customerRepository.findById(customerId)
+    /** Resolves the public business identifier to an ACTIVE customer or 404s. */
+    public Customer checkCustomerExistsAndActive(Long customerNumber) {
+        Customer customer = customerRepository.findByCustomerNumber(customerNumber)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, MessageKeys.CUST_NOT_FOUND,
-                        "Customer not found: " + customerId));
-        if (customer.getStatus() != Status.ACTIVE) {
+                        "Customer not found: " + customerNumber));
+        if (!customer.isActive()) {
             throw new BusinessException(HttpStatus.NOT_FOUND, MessageKeys.CUST_NOT_FOUND,
-                    "Customer not found: " + customerId);
+                    "Customer not found: " + customerNumber);
         }
         return customer;
     }
 
+    // ADR-003: global, permanent uniqueness — checks ALL ind rows including
+    // soft-deleted/passive ones. The DB UNIQUE constraint is the racing-insert backstop.
     public void checkNationalityIdIsUniqueForCreate(String nationalityId) {
-        if (customerRepository.existsActiveByNationalityId(nationalityId)) {
+        if (individualRepository.existsByNationalityId(nationalityId)) {
             throw new BusinessException(HttpStatus.CONFLICT, MessageKeys.CUST_DUP_NATID,
-                    "nationalityId is already used by an active customer: " + nationalityId);
+                    "A customer already exists with this Nationality ID");
         }
     }
 
-    public void checkNationalityIdIsUniqueForUpdate(String nationalityId, Long customerId) {
-        if (customerRepository.existsActiveByNationalityIdExcludingCustomer(nationalityId, customerId)) {
+    public void checkNationalityIdIsUniqueForUpdate(String nationalityId, Long currentIndividualId) {
+        if (individualRepository.existsByNationalityIdAndIdNot(nationalityId, currentIndividualId)) {
             throw new BusinessException(HttpStatus.CONFLICT, MessageKeys.CUST_DUP_NATID,
-                    "nationalityId is already used by another active customer: " + nationalityId);
+                    "A customer already exists with this Nationality ID");
         }
     }
 
     public void checkBirthDateIsNotFuture(LocalDate birthDate) {
         if (birthDate.isAfter(LocalDate.now())) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, MessageKeys.VAL_BIRTHDATE,
-                    "birthDate cannot be in the future");
+                    "Birth date cannot be in the future");
         }
     }
 
@@ -79,10 +87,10 @@ public class CustomerBusinessRules {
         }
     }
 
-    // TODO: once product-service/account-service exist, call them here to verify the
-    // customer has no active products/accounts before allowing a soft delete. For now
-    // this always passes (assumes no active products), per current PR scope.
-    public void checkCustomerHasNoActiveProducts(Long customerId) {
+    // TODO (intentional): AC-CUST-05-03 requires blocking deletion while the customer
+    // has active products. Products live in the future product/account domains; this
+    // check is a documented no-op until they exist. It must NOT be removed silently.
+    public void checkCustomerHasNoActiveProducts(Long customerNumber) {
         // no-op
     }
 }

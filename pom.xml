@@ -29,6 +29,8 @@
         <module>backend/auth-service</module>
         <module>backend/api-gateway</module>
         <module>backend/customer-service</module>
+        <module>backend/lookup-service</module>
+        <module>backend/mernis-stub</module>
     </modules>
 
     <dependencyManagement>

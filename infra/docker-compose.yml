@@ -108,6 +108,61 @@ services:
     networks:
       - crm-net
 
+  lookup-service:
+    build:
+      context: ..
+      dockerfile: backend/lookup-service/Dockerfile
+    image: crm-lite/lookup-service:local
+    container_name: lookup-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lookup_db
+      SPRING_DATASOURCE_USERNAME: crmlite
+      SPRING_DATASOURCE_PASSWORD: crmlite
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8083' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+    depends_on:
+      config-server:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - crm-net
+
+  mernis-stub:
+    build:
+      context: ..
+      dockerfile: backend/mernis-stub/Dockerfile
+    image: crm-lite/mernis-stub:local
+    container_name: mernis-stub
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8084' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+    depends_on:
+      config-server:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - crm-net
+
   customer-service:
     build:
       context: ..
@@ -134,6 +189,12 @@ services:
       discovery-server:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      # Writes need the shared catalog (ADR-002) and MERNIS (KR-10); reads do not,
+      # but waiting for them gives a fully usable stack on first `up`.
+      lookup-service:
+        condition: service_healthy
+      mernis-stub:
         condition: service_healthy
     networks:
       - crm-net

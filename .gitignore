@@ -4,9 +4,14 @@ target/
 
 # IDE
 .idea/
+.vscode/
 *.iml
 *.iws
 *.ipr
+
+# Local scratch artifacts (never commit)
+cp.txt
+cp-abs.txt
 
 # OS
 .DS_Store

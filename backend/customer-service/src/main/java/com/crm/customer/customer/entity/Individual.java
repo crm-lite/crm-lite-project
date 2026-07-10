@@ -1,9 +1,8 @@
 package com.crm.customer.customer.entity;
 
+import com.crm.customer.common.entity.StatusAwareEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -16,11 +15,11 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "individuals")
+@Table(name = "ind")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Individual {
+public class Individual extends StatusAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -30,31 +29,30 @@ public class Individual {
     @JoinColumn(name = "party_id", nullable = false, unique = true)
     private Party party;
 
-    @Column(name = "first_name", nullable = false, length = 100)
+    @Column(name = "first_name", nullable = false, length = 50)
     private String firstName;
 
-    @Column(name = "middle_name", length = 100)
+    @Column(name = "middle_name", length = 50)
     private String middleName;
 
-    @Column(name = "last_name", nullable = false, length = 100)
+    @Column(name = "last_name", nullable = false, length = 50)
     private String lastName;
 
-    @Column(name = "father_name", length = 100)
+    @Column(name = "father_name", length = 50)
     private String fatherName;
 
-    @Column(name = "mother_name", length = 100)
+    @Column(name = "mother_name", length = 50)
     private String motherName;
 
     @Column(name = "birth_date", nullable = false)
     private LocalDate birthDate;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "gender", nullable = false, length = 20)
-    private Gender gender;
+    // External GNL_TP reference (MALE/FEMALE) — central catalog ID (ADR-002).
+    @Column(name = "gender_id", nullable = false)
+    private Long genderId;
 
-    // Deliberately not unique = true here (see V1 migration comment): the
-    // "unique among ACTIVE customers only" rule is enforced in CustomerBusinessRules,
-    // not at the DB level, so a value freed up by a soft-deleted customer can be reused.
-    @Column(name = "nationality_id", nullable = false, length = 11)
+    // ADR-003: globally and permanently unique (DB UNIQUE over all rows, including
+    // soft-deleted ones). A passive customer never releases its Nationality ID.
+    @Column(name = "nationality_id", nullable = false, length = 11, unique = true)
     private String nationalityId;
 }

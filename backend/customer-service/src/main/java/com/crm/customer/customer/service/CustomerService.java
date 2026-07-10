@@ -9,14 +9,15 @@ import org.springframework.data.domain.Pageable;
 
 public interface CustomerService {
 
-    Page<CustomerSearchResponse> search(String firstName, String lastName, String nationalityId, Long customerId,
-                                         String accountNumber, String gsmNumber, String orderNumber, Pageable pageable);
+    Page<CustomerSearchResponse> search(String firstName, String lastName, String nationalityId,
+                                        Long customerNumber, String gsmNumber,
+                                        String accountNumber, String orderNumber, Pageable pageable);
 
-    CustomerDetailResponse getById(Long customerId);
+    CustomerDetailResponse getByCustomerNumber(Long customerNumber);
 
     CustomerDetailResponse create(CustomerCreateRequest request);
 
-    CustomerDetailResponse update(Long customerId, CustomerUpdateRequest request);
+    CustomerDetailResponse update(Long customerNumber, CustomerUpdateRequest request);
 
-    void delete(Long customerId);
+    void delete(Long customerNumber);
 }

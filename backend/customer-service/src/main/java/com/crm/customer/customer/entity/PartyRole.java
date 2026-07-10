@@ -1,9 +1,7 @@
 package com.crm.customer.customer.entity;
 
-import jakarta.persistence.Column;
+import com.crm.customer.common.entity.StatusAwareEntity;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -15,11 +13,11 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "party_roles")
+@Table(name = "party_role")
 @Getter
 @Setter
 @NoArgsConstructor
-public class PartyRole {
+public class PartyRole extends StatusAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,8 +30,4 @@ public class PartyRole {
     @ManyToOne
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
-    private Status status;
 }

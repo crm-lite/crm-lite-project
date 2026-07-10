@@ -4,12 +4,16 @@ import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+/**
+ * Customer Info screen payload (FR-CUST-02). {@code customerNumber} is the business
+ * identifier; {@code status} is the GNL_ST short code (display names/localization are
+ * a frontend catalog concern); {@code role} is ROLE.role_name ("Customer").
+ */
 @Getter
 @AllArgsConstructor
 public class CustomerDetailResponse {
 
-    private final Long customerId;
-    private final Long partyId;
+    private final Long customerNumber;
     private final String firstName;
     private final String middleName;
     private final String lastName;
