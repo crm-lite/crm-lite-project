@@ -157,6 +157,34 @@ services:
     networks:
       - crm-net
 
+  # One-shot: guarantees the crm-lite login theme is actually selected by the realm.
+  # `--import-realm` imports ONLY on first start (when the realm is absent from
+  # keycloak_db), so a developer whose keycloak_db predates the theme commit keeps
+  # an empty realm.login_theme and still sees Keycloak's stock login page — the
+  # manual Admin Console step described in keycloak/themes/crm-lite/README.md.
+  # This container removes that manual step: on every `up` it writes loginTheme on
+  # the realm. Idempotent (rewrites the same value), and nothing depends_on it, so
+  # if it ever fails the rest of the stack still comes up exactly as before.
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.3.4
+    container_name: keycloak-init
+    # The image ENTRYPOINT is kc.sh, which would swallow the shell command; it has
+    # to be overridden to run kcadm.sh. Same disposable local-only bootstrap admin
+    # as the keycloak service above.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >
+        /opt/keycloak/bin/kcadm.sh config credentials
+        --server http://keycloak:8180 --realm master --user admin --password admin &&
+        /opt/keycloak/bin/kcadm.sh update realms/crm-lite -s loginTheme=crm-lite &&
+        echo "keycloak-init: loginTheme=crm-lite applied to realm crm-lite"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - crm-net
+
   lookup-service:
     build:
       context: ..

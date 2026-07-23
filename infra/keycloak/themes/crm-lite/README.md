@@ -44,19 +44,28 @@ FR-AUTH-01 UI criteria carried here: password masking (default) + reveal toggle,
 `maxlength="64"` on both fields, login button disabled while a field is empty
 (progressive enhancement — server still validates), EN/TR language switch.
 
-## Applying the theme (IMPORTANT — realm import runs only once)
+## Applying the theme (automatic — no manual step)
 
 `docker-compose.yml` mounts `./keycloak/themes` into the Keycloak container and the
-realm import sets `"loginTheme": "crm-lite"`. **But `--import-realm` only imports on
-first start** (when the realm is absent from `keycloak_db`). If your `keycloak_db`
-already has the `crm-lite` realm, the new `loginTheme` will NOT auto-apply. Pick one:
+realm import sets `"loginTheme": "crm-lite"`. That import alone is not enough:
+**`--import-realm` only imports on first start** (when the realm is absent from
+`keycloak_db`), so a developer whose `keycloak_db` predates this theme keeps an empty
+`realm.login_theme` and still gets Keycloak's stock login page.
 
-- **Existing realm (fastest):** Admin Console → `http://localhost:8180` → realm
-  `crm-lite` → **Realm settings → Themes → Login theme → `crm-lite`** → Save.
-- **Fresh apply from the committed JSON:** drop and re-import the realm (e.g. delete
-  the `crm-lite` realm in the console, or recreate `keycloak_db`), then restart
-  Keycloak so the import runs again. Do **not** `podman compose down -v` (destroys all
-  DBs — see `docs/runbooks/auth-testing.md`).
+The **`keycloak-init`** service in `docker-compose.yml` closes that gap. It is a
+one-shot container that waits for Keycloak to report healthy, then writes
+`loginTheme=crm-lite` on the realm via `kcadm.sh` and exits. It runs on every
+`podman compose up`, is idempotent (rewrites the same value), and touches only the
+`crm-lite` realm — `master` / the Admin Console login page are left alone. Nothing
+`depends_on` it, so if it ever fails the rest of the stack still comes up.
+
+So a plain `podman compose up` is all that is required, on a fresh `keycloak_db` or
+an existing one.
+
+**Manual fallback** (only if `keycloak-init` is unavailable or failed): Admin Console
+→ `http://localhost:8180` → realm `crm-lite` → **Realm settings → Themes → Login
+theme → `crm-lite`** → Save. Do **not** reach for `podman compose down -v` to force a
+re-import — it destroys all DBs (see `docs/runbooks/auth-testing.md`).
 
 ## Iterating against the mock
 
