@@ -140,6 +140,10 @@ services:
       - "8180:8180"
     volumes:
       - ./keycloak/realm:/opt/keycloak/data/import:ro
+      # CRM Lite login theme (FR-AUTH-01 UI; ADR-006). start-dev disables theme
+      # caching, so edits under ./keycloak/themes show on a browser refresh — no
+      # container restart. The realm's "loginTheme": "crm-lite" selects it.
+      - ./keycloak/themes:/opt/keycloak/themes:ro
     healthcheck:
       # Keycloak's image (like the temurin JRE images) has bash but no curl/wget.
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8180' || exit 1"]
