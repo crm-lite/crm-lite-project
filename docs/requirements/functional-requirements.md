@@ -1,9 +1,10 @@
 # Functional Requirements — Implementation Summary
 
-Source of truth: `docs/source/requirements/CRM_Lite_FR_AC_v8_Final.docx`
-(**16.07.2026 revision** — see [document-delta.md](document-delta.md) for what changed).
-This file summarizes what the backend implements today and where behaviour is
-intentionally deferred. IDs refer to the FR document.
+Source of truth: `docs/source/requirements/CRM_Lite_FR_AC_v8-1_Final.docx`
+(**23.07.2026 revision**, supersedes the 16.07.2026 v8 Final — see
+[document-delta.md](document-delta.md) for what changed). This file summarizes what
+the backend implements today and where behaviour is intentionally deferred. IDs
+refer to the FR document.
 
 ## Implemented (customer-service, port 8082)
 
@@ -17,6 +18,19 @@ intentionally deferred. IDs refer to the FR document.
 | FR-ADDR-01..05 | Address management | List/add/update/delete/set-primary under `/api/customers/{n}/addresses`; first address auto-primary, one active primary (DB partial unique index), last-address and primary-delete guards, cascading city→district, `GET /api/cities`, `GET /api/cities/{id}/districts`. The AC-ADDR-04-03 delete-confirmation modal (`MSG-ADDR-DELETE-CONFIRM`) is a frontend interaction; the backend executes the delete only when called |
 | FR-CNTC-01..02 | Contact medium | `GET/PUT /api/customers/{n}/contact-medium`; Email+Mobile required, VR-EMAIL/VR-PHONE/VR-MOBILE enforced |
 | KR-10 | Fake MERNIS | `backend/mernis-stub` (:8084); rejection ⇒ 400 `MSG-CUST-NATID-VERIFICATION-FAILED`, unavailability ⇒ 503 `MSG-MERNIS-UNAVAILABLE`; customer NOT created either way (fail closed) |
+
+## Implemented (account-service, port 8085 — 2026-07-23, ADR-013/014)
+
+| FR | Capability | Notes |
+|---|---|---|
+| FR-ACCT-01 | Billing-account list | `GET /api/accounts?customerId={customerNumber}` — 224 only, **Active + Passive** (AC-ACCT-01-03), Active first then Passive, accountNumber ASC inside each group (AC-ACCT-01-04), no pagination, `200 []` when none |
+| FR-ACCT-02 / KR-11 | Create Billing Account | `POST /api/accounts` `{customerId, accountName, addressId}` → 201; type forced to 224; address validated against the customer's active address list (customer-service, token propagated); KR-11 number (`[T][YY][SSSSSS][C]`, Luhn, ADR-14); **K-8**: first 224 lazily creates the customer's single 223 Customer Account in the same ACID transaction (never exposed via the API) |
+| FR-ACCT-03 | Update | `PUT /api/accounts/{accountNumber}` — mutable fields exactly `accountName`+`addressId`; immutable/unknown fields → 400 `MSG-ACCT-IMMUTABLE-FIELD` (rejected, never ignored); Passive → 409 `MSG-ACCT-NOT-ACTIVE` |
+| FR-ACCT-04 | Delete = passivation | `DELETE /api/accounts/{accountNumber}` → 204; soft passivation only, row stays list-visible as Passive (v8-1 AC-ACCT-04-02); active involvement (local `cust_acct_prod_invl` projection) → 409 `MSG-ACCT-HAS-PRODUCTS`; re-delete → 409 `MSG-ACCT-NOT-ACTIVE`; `MSG-ACCT-DELETED`/`MSG-ACCT-DELETE-CONFIRM` are frontend-only |
+
+Details: `docs/api/account-service.md`; decisions: ADR-013/ADR-014 +
+`docs/architecture/account-service-decisions.md` (K-8 analyst approval, Passive
+policy, seed regeneration).
 
 ## Implemented (authentication/security milestone, 2026-07-17 — ADR-006..011)
 
@@ -47,22 +61,39 @@ outages) the generic `MSG-SERVICE-UNAVAILABLE`.
 **Documented project additions** (not in the analyst catalog — framework/integration
 outcomes the catalog does not name): `MSG-FEATURE-NOT-IMPLEMENTED`,
 `MSG-VALIDATION-ERROR`, `MSG-INTERNAL-ERROR`, `MSG-SERVICE-UNAVAILABLE` (shared
-catalog outages, ADR-002), `MSG-ADDR-LAST-DELETE`, `MSG-ADDR-PRIMARY-DELETE`,
+catalog outages, ADR-002; also customer-service outages seen by account-service,
+ADR-013), `MSG-ADDR-LAST-DELETE`, `MSG-ADDR-PRIMARY-DELETE`,
 `MSG-AUTH-UNAUTHORIZED` (401), `MSG-AUTH-FORBIDDEN` (403),
 `MSG-AUTH-CSRF-REJECTED` (403, CSRF) — ADR-008/009. (`MSG-AUTH-INVALID-CRED`
 remains a Keycloak login-page concern, not an API key.)
+
+Account-service additions (ADR-013 §6; EN/TR texts in
+`docs/architecture/account-service-decisions.md`): `MSG-ACCT-NOT-FOUND` (404),
+`MSG-ACCT-NOT-ACTIVE` (409), `MSG-ACCT-IMMUTABLE-FIELD` (400),
+`MSG-ACCT-DUP-NUMBER` (409), `MSG-ACCT-NUMBER-CAPACITY-EXCEEDED` (409).
+From the analyst catalog: `MSG-ACCT-HAS-PRODUCTS` (409);
+`MSG-ACCT-DELETE-CONFIRM`/`MSG-ACCT-DELETED` are frontend-only and never
+produced by the backend.
 
 **Retired:** `MSG-SEARCH-CRITERIA-REQUIRED` — removed together with the mandatory
 search-criteria rule (ADR-005); no endpoint uses it anymore.
 
 ## Intentionally deferred (explicit TODOs, never silent)
 
-- `accountNumber` / `orderNumber` search → **501 MSG-FEATURE-NOT-IMPLEMENTED** until the
-  account/order domains exist (KR-02 resolution will live there).
-- Active-product check on customer delete (AC-CUST-05-03) → no-op until product/account domains exist.
-- Billing-account passivation on customer delete (part of AC-CUST-05-04) → cross-service future work.
-- Address in-use check (AC-ADDR-04-04, MSG-ADDR-IN-USE) → no-op until account/service-address records exist.
-- **ACCT** (FR-ACCT-01..04, ACCT_TP/CUST_ACCT ownership) → planned account-service.
+- `accountNumber` / `orderNumber` search → **501 MSG-FEATURE-NOT-IMPLEMENTED** in
+  customer-service. account-service now exists, so wiring `accountNumber` search to it
+  (KR-02) is a **separate customer-service follow-up PR** — this sprint did not modify
+  customer-service; `orderNumber` still waits for the order domain.
+- Active-product check on customer delete (AC-CUST-05-03) and billing-account
+  passivation on customer delete (part of AC-CUST-05-04) → still customer-service
+  no-ops; converting them to real account-service calls is the same follow-up PR.
+- Address in-use check (AC-ADDR-04-04, MSG-ADDR-IN-USE) → still a customer-service
+  no-op; billing accounts now reference addresses (`cust_acct.address_id`), so the
+  real check becomes possible in that follow-up PR.
+- **Product involvement sync**: `cust_acct_prod_invl` is real, queried guard state
+  populated only by seed/test data until product-service exists; future population
+  goes through an account-service command/API or a consumed event — never direct
+  `account_db` writes by product/order/sale services (ADR-013 §5).
 - **PROD** (FR-PROD-01..02) and **SALE** (FR-SALE-01..02, KR-06/KR-7 basket+order flow)
   → planned product/order services.
 - **LANG** (FR-LANG-01: TR/EN label+message catalogs, **default language English** per
