@@ -295,6 +295,41 @@ services:
     networks:
       - crm-net
 
+  # Frontend SPA (FE-ADR-010). Multi-stage build: the Node toolchain stays in the
+  # build stage and the runtime image is nginx + static assets only.
+  #
+  # nginx also reverse-proxies /api, /oauth2, /login and /logout to the gateway
+  # over crm-net, so the browser sees ONE origin — the container-side half of
+  # FE-ADR-004, behaviourally identical to the `ng serve` dev proxy. That is why
+  # no API URL is injected here: the app calls relative paths and nginx decides
+  # the upstream (FE-ADR-010 §6).
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    image: crm-lite/frontend:local
+    container_name: frontend
+    # 4200 matches `ng serve`, so the browser-facing origin is identical in
+    # development and in the container (FE-ADR-010 §5). That matters: this exact
+    # origin is registered on the crm-bff Keycloak client by keycloak-init.
+    ports:
+      - "4200:80"
+    healthcheck:
+      # nginx:alpine has BusyBox wget but no bash, so the `</dev/tcp` probe the
+      # JVM services use is not available here.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    depends_on:
+      # The proxy target must already be answering, otherwise the first page load
+      # races the gateway's boot and every API call 502s.
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - crm-net
+
 networks:
   crm-net:
     driver: bridge
