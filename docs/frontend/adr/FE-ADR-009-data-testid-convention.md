@@ -116,3 +116,23 @@ exists for the cases where that is ambiguous or brittle, not to replace it.
   feedback that arrives naturally and cannot be silenced with a comment.
   (The layer-boundary rule in FE-ADR-003 *is* linted, because there the
   detection is exact.)
+
+  > **Refined 2026-07-24 — still not an ESLint rule.** A narrow, dependency-free
+  > check was added at `frontend/scripts/check-conventions.mjs`
+  > (`npm run check:conventions`). It does not reopen the decision above; it
+  > satisfies the same reasoning by construction:
+  >
+  > - **Narrow.** It inspects only markup whose interactivity is unambiguous —
+  >   `<button>`, `<input>`, `<select>`, `<textarea>`, an `<a>` that actually
+  >   navigates, and any element carrying a `(click)` handler. Decorative markup
+  >   is never examined, so the false-positive surface the ESLint rule would
+  >   have had does not exist.
+  > - **Unsilenceable.** There is no inline suppression, deliberately: per §1 the
+  >   fix is always to add the attribute, never to exempt the element. This is
+  >   what an `eslint-disable`-able rule could not guarantee.
+  >
+  > The same script also enforces FE-ADR-012 §b (no hardcoded user-visible text,
+  > including literal `title` / `aria-label` / `placeholder` / `alt`). PR review
+  > and the E2E suite remain the primary enforcement; the script is a safety net
+  > that catches the omission before review does. Day-to-day usage:
+  > `docs/frontend/testing-conventions.md`.

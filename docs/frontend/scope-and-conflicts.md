@@ -4,7 +4,7 @@ Backend'in `docs/requirements/document-delta.md` disiplininin frontend
 karşılığı (FE-ADR-013 §f). **Hiçbir kapsam dışı bırakma ve hiçbir mock/backend
 çelişkisi sessizce çözülmez** — her biri burada bir satırla yaşar.
 
-Son güncelleme: **2026-07-23**
+Son güncelleme: **2026-07-24**
 
 ## Durum etiketleri
 
@@ -72,6 +72,26 @@ Tam gerekçeler: `docs/frontend/mock-ui-analysis.md` §5A.
 
 ---
 
+## 2A. Customer Search (golden path) — ekran bazlı uyuşmazlıklar
+
+Ekran yazılmadan önce netleşmesi gerekenler. Analiz:
+`docs/frontend/customer-search-analysis.md`.
+
+> **Not:** 2A.1 ve 2A.2 için **proje kararı zaten var** (§2.1, §2.2 — 🟢) ve
+> geliştirme bunlarla ilerler; buradaki satırlar o kararları geri almaz, analist
+> **onayını** ister. Onay gelmezse karar aynen geçerli kalır — bu maddeler
+> geliştirmeyi **bloke etmiyor**.
+
+| # | Konu | Mock ne diyor | Backend ne veriyor | Analiste sorulan | Durum |
+|---|---|---|---|---|---|
+| 2A.1 | **"Second name" arama davranışı** | Tabloda **kolon** var; filtre alanı **yok** | Ayrı `middleName` parametresi **yok**; `firstName` parametresi First+Middle **birleşiminde** kelime-başı arıyor (KR-01) | Kullanıcı "Nur" yazıp **yalnız ikinci adı** "Nur" olanları bulmak isterse bu karşılanmalı mı? Bugünkü davranış: "Zeynep Nur" da "Nur Ali" de gelir, ayrım yapılamaz. Tek kutunun etiketi **"Name"** olarak mı kalsın, yoksa "Name / Second name" gibi mi ifade edilsin? | 🟡 **analiste soruldu** (proje kararı §2.1 geçerli) |
+| 2A.2 | **"Role" ile filtreleme** | Tabloda **kolon** var; filtre alanı **yok** | Liste endpoint'inde `role` parametresi **yok**; yanıtta `role` alanı **var** | Role'e göre filtreleme bir gereksinim mi? Değilse kolon salt bilgi olarak kalır (bugünkü plan). Gereksinimse **backend'e yeni parametre** gerekir — bu bir backend iş kalemidir, frontend tek başına çözemez | 🟡 **analiste soruldu** (proje kararı §2.2 geçerli) |
+| 2A.3 | **Boş sonuç: iki farklı durum** | Tek boş-durum metni var | Aynı 200 + boş liste, iki farklı anlam | Ekran **ilk açıldığında** (hiç arama yapılmadan) sistemde müşteri yoksa gösterilecek metin, **arama sonucu boş** metninden farklı olmalı. `MSG-CUST-NOT-FOUND` ("Müşteri bulunamadı! Oluşturmak ister misiniz?") aramasız durumda yanıltıcı. Aramasız durum için **analist metni var mı**, yoksa proje-yazımı mı olsun? | 🟡 **analiste soruldu** |
+| 2A.4 | **Sayfalama sayfa butonları** | `‹ 1 2 3 ›` — sabit 3 sayfa | `totalPages` 7+ olabilir (137 kayıt / 20) | Sayfa sayısı fazlayken kısaltma nasıl olsun? (`1 … 4 5 6 … 12` mi, yalnız ileri/geri mi, "Sayfa 4 / 12" mi?) Mock'ta karşılığı yok | 🟡 **analiste soruldu** |
+| 2A.5 | **Sonuç satırına tıklama** | Satır tıklanınca Customer Info'ya gidiyor | Detay endpoint'i **var** (`GET /api/customers/{customerNumber}`) | Detay ekranı bu fazda yazılmayacak. Satır tıklaması şimdilik **pasif** mi kalsın, yoksa Detail ile birlikte mi açılsın? Öneri: `routerLink` hazır yazılır, hedef rota gelene kadar devre dışı | 🟡 **karar bekliyor** (bloke etmiyor) |
+
+---
+
 ## 3. Analist dokümanı ↔ backend çelişkileri (frontend'i etkileyenler)
 
 Backend tarafındaki tam kayıt: `docs/requirements/document-delta.md` §Open
@@ -95,12 +115,14 @@ conflicts. Aşağıdakiler frontend'i doğrudan bağlar.
 | 4.2 | **Frontend host portu** | **4200** (boşta; kullanılanlar 8888/8761/8080/5432/8180). 4.1 çözüldüğü için sabitlendi | 🟢 karara bağlandı |
 | 4.3 | **Node sürümü** | Karar: **22.23.1** + npm **10.9.8**. Makinede **ZIP dağıtımı** ile kuruldu (`C:\tools\node-v22.23.1-win-x64`), MSI ile değil: MSI 22.23.1'i kurulu 23.11.1 üzerine bir *downgrade* sayıp `WIX_DOWNGRADE_DETECTED` ile reddediyor, kaldırma ise yönetici hakkı istiyor. PATH `~/.bashrc` ile önceliklendirildi. ⚠️ **Bu yalnız Git Bash içinde geçerli** — sistem PATH'indeki `C:\Program Files\nodejs` (v23.11.1) duruyor, cmd/PowerShell hâlâ onu görüyor. Container tarafı etkilenmez (`node:22.23.1-alpine`). ⚠️ Node 22 maintenance'ta, EOL **2027-04-30** | 🟢 **karara bağlandı ve doğrulandı** |
 | 4.4 | **`Page` zarfının JSON şekli** | **Backend hatası değil** — `Page<CustomerDetailResponse>` dönüyor ve Spring'in `PageImpl` serileştirmesi kullanılıyor; `spring.data.web.pageable.serialization-mode` ayarlanmadığı için şekil *framework varsayılanına* bağlı, yani bilinçli bir kontrat değil. **Öneri (backend):** modu açıkça pinlemek ya da açık bir sayfa DTO'su döndürmek — böylece Spring Boot yükseltmesi kontratı sessizce değiştiremez. Frontend tarafı: zarf tipi tek yerde (`data/` katmanı) tanımlanır, ekranlara sızmaz | 🟡 **backend'e önerildi** |
-| 4.5 | **zone.js / zoneless** | **Zoneless.** `@angular/core@22.0.8` → `peerDependenciesMeta: { zone.js: { optional: true } }` (doğrulandı) → birinci sınıf destekli mod. Signal tabanlı state (FE-ADR-006) ile doğal uyum; zone.js'in async monkey-patch'i gereksiz. Gereklilik: şablonun okuduğu state **signal** olmalı | 🟢 karara bağlandı |
+| 4.5 | **zone.js / zoneless** | 🟢 **UYGULANDI** — zoneless; `provideZonelessChangeDetection()` app.config'te açık, zone.js bağımlılık değil. `@angular/core@22.0.8` `peerDependenciesMeta: { zone.js: { optional: true } }` (FE-ADR-006 §7) | 🟢 karara bağlandı |
 | 4.6 | **CI wiring** | **Ayrı iş.** Frontend job'ı backend Maven job'ından bağımsız çalışır; frontend lint hatası backend release'ini bloke etmez, tersi de geçerli (FE-ADR-001) | 🟢 karara bağlandı |
-| 4.7 | **Import-boundary lint** | **Eklenecek.** ESLint'in yerleşik `no-restricted-imports` kuralıyla FE-ADR-003'ün tek yönlü import grafiği zorlanır (`core`/`shared` → `features` yasak; `shared` → `core` yasak). Ek eklenti gerekmez. Gerekçe: katman ihlali sessizdir ve geri dönüşü refactor gerektirir | 🟢 karara bağlandı |
+| 4.7 | **Import-boundary lint** | 🟢 **EKLENDI** — ESLint `no-restricted-imports` ile `core/`→`features/` ve `shared/`→`core/`|`features/` yasak; ihlal FE-ADR-003 mesajıyla reddediliyor (kanıtlandı 2026-07-23) | 🟢 karara bağlandı |
 | 4.8 | **`data-testid` lint kuralı** | **Eklenmeyecek (bilinçli).** Angular şablonlarında "etkileşimli eleman" tespiti güvenilmez; false-positive üretip `eslint-disable` yorumlarının çoğalmasına ve kuralın değer kaybetmesine yol açar. Zorlama mekanizması: **PR review + E2E testlerin kendisi** (seçici yoksa test yazılamaz) | 🟢 karara bağlandı |
-| 4.9 | **Katalog bütünlük testi** | **Yapılacak.** `docs/api/*.md` + `functional-requirements.md`'de dokümante her `messageKey`'in katalogda EN **ve** TR karşılığı olduğunu doğrulayan birim testi; eksik anahtar → test kırmızı. İskelet kurulumunda yazılır (FE-ADR-008 §Consequences) | 🟢 karara bağlandı |
+| 4.9 | **Katalog bütünlük testi** | 🟢 **YAZILDI** — `frontend/src/app/core/i18n/i18n.spec.ts`: her anahtarın EN+TR karşılığı dolu + dokümante 22 backend `messageKey` katalogda mevcut; eksikse test kırmızı. 6/6 test geçiyor | 🟢 karara bağlandı |
 | 4.10 | **Tarih formatı istisnası** | FE-ADR-012 §e genel ilkesi "kültüre bağlı biçimlendirme yerelleştirilir"; tarih için **sabit `dd.MM.yyyy`** istisnası bilinçli alındı. Geri alınmak istenirse buradan izlenir | 🟢 **karara bağlandı** (istisna kayıtlı) |
+| 4.12 | **`src/app/layout/` — dördüncü üst klasör** | Uygulama kabuğu (header + sidenav) FE-ADR-003 §1'in üç katmanının hiçbirine oturmuyor: `core/` değil (servis değil, bileşen), `shared/` **olamaz** (core'dan `AuthService`/`I18nService` enjekte ediyor; import-boundary lint'i bunu reddediyor), `features/` değil (kullanıcıya dönük bir "yetenek" değil, her ekranın çerçevesi). Bu yüzden tek bileşenli ince bir **`layout/`** klasörü eklendi. Değerlendirilen alternatifler: (a) kabuğu `shared/`e presentational yapıp core'u input/output ile geçirmek — iskelet aşamasında gereksiz dumb/smart ayrımı ve yine bir yerde container gerekiyor; (b) `features/shell/` demek — ADR'nin "yetenek" tanımını eğip bükmek. `layout/` yalnız aşağı doğru (`core` + `shared`) bakar; lint kuralları `core/` ve `shared/`i kısıtladığı için ihlal riski yok | 🟢 karara bağlandı |
+| 4.11 | **`validationErrors` alan yolu tekdüze değil → frontend'de çözüldü** | Backend handler'ları farklı biçim üretiyor (kaynaktan doğrulandı 2026-07-24): body `@Valid` → **tam yol** (`demographic.firstName`, `addresses[0].cityId`, `contactMedium.email`); `@RequestParam` (`handleConstraintViolation:72`) → **yalnız son segment** (`firstName`); tip uyuşmazlığı → param adı. Ayrıca `demographic`/`addresses`/`contactMedium` **çıplak** gelebiliyor ve **hiçbir form kontrolüne karşılık gelmiyor** — naif "yaprak ada göre eşleştir" yaklaşımı bunları sessizce yutar (kullanıcı 400 alır, ekranda hiçbir şey görmez). **Backend'e dokunulmadan** çözüldü: `core/http` her yolu bir kez ayrıştırıp `leaf`/`scope`/`index`/`structural` üretiyor; `matchFieldErrors()` eşleşenlerin YANINDA **`unmatched`** döndürüyor, böylece sessiz yutma API düzeyinde imkânsız; `fieldErrorsAt(scope,index)` wizard'da doğru adres satırını hedefliyor. Ham İngilizce değerli alanlardan **anlamı tek olanlar** (`cityId`/`districtId`/`gender`/`addresses`/`demographic`/`contactMedium`) frontend anahtarına eşlendi; serbest metin alanları (`street`, `houseFlatNumber`, `addressDescription`) bilinçle generic bırakıldı — zarf hangi kısıtın patladığını söylemediği için "zorunludur" demek yanlış olabilirdi (`@NotBlank` + `@Size` birlikte). Bu bilinçli tercihler `INTENTIONALLY_GENERIC` listesinde **açıkça** duruyor; listede olmayan bir alan generic'e düşerse `console.warn` üretiliyor (FE-ADR-008 §3 "gap geliştiriciye görünür, kullanıcıya görünmez") — böylece backend'in ekleyeceği yeni bir alan sessizce generic'e düşmüyor. 22/22 test | 🟢 **karara bağlandı** |
 
 ---
 
@@ -117,6 +139,8 @@ conflicts. Aşağıdakiler frontend'i doğrudan bağlar.
 ---
 
 | 5.6 | **Swagger UI / api-docs anonim değil** | PROJECTBRAIN §4.7 *"Docs sayfası login'siz görülebilir"* diyor, ama çalışan stack'te `GET /swagger-ui.html` ve `GET /v3/api-docs/customer-service` **401 `MSG-AUTH-UNAUTHORIZED`** dönüyor (2026-07-23 ölçümü). Ya çalışan imajlar ADR-012 commit'inden eski, ya da `crm.security.permit-paths` beklendiği gibi uygulanmıyor. Frontend'i bloke etmiyor ama `Page` zarfının şemasını Swagger'dan okumayı engelledi (§4.4) | 🟡 **backend'e bildirildi** |
+| 5.8 | **PROJECTBRAIN §10 "Compose 8 servis" notu bayat** | `infra/docker-compose.yml`'e `frontend` servisi eklendi (FE-ADR-010, 2026-07-24; `git diff` = 35 ekleme / 0 silme, mevcut hiçbir servise dokunulmadı). Servis sayısı artık **9**. PROJECTBRAIN backend dokümanı olduğu için frontend tarafından düzenlenmedi | 🟡 **backend'e bildirildi** |
+| 5.7 | **Logout CSRF, tam-sayfa gezinme POST'u ile taşınamıyor** | FE-ADR-005 §3 "tam sayfa gezinme + `X-XSRF-TOKEN` header" öngörüyordu; ancak tarayıcıda gezinen bir POST yalnız `<form>` ile yapılır ve form, header değil `_csrf` **parametresi** taşır. Gateway'in `SpaCsrfTokenRequestHandler`'ı (kaynaktan doğrulandı 2026-07-24) parametre yolunu **XOR-decode** ediyor (BREACH koruması), header yolunu ise ham token ile karşılaştırıyor — `XSRF-TOKEN` çerezi **ham** token tuttuğundan yalnız **header (XHR)** yolu geçerli. **Karar:** logout `HttpClient` POST (header → CSRF geçerli) + ardından `/`'a tam-sayfa gezinme (`core/auth/auth.service.ts`). Keycloak `end_session` 302'sini XHR sürükleyemiyor, fakat SSO oturumu `id_token_hint` ile **sunucu tarafında** yine de sonlanıyor. **Kusursuz tarayıcı-yönlü RP-logout** (Keycloak tarayıcı çerezlerinin de temizlenmesi) isteniyorsa backend bir olanak eklemeli: (a) logout `end_session` URL'ini JSON'da döndürsün, Angular `window.location.assign` etsin; ya da (b) gezinilebilir bir GET logout. **(c)** `crm.security.post-logout-redirect-uri` hiçbir yml'de tanımlı değil → yalnız Java varsayılanı `http://localhost:8080/` geçerli; `:4200` olmalı (ya da `X-Forwarded-*`'tan türetilmeli).<br>**🔴 CANLIDA DOĞRULANDI (2026-07-24)** — iki somut belirti: (1) XHR, gateway'in cross-origin 302'sini takip ederken **askıda kalabiliyor**; sign-out navigasyonu yanıta zincirlendiği için buton *hiçbir şey yapmıyordu*. (2) SSO ölmediğinden `/`'a inince guard → Keycloak → **sessiz re-login** → `/customers`; kullanıcı çıkış yapamamış sanıyor. **Frontend azaltmaları (uygulandı):** `logout()` artık `timeout(3000)` ile sınırlı — yanıt gelmese de çıkış tamamlanır (regresyon testi var); ve varış noktası guard'ın dışındaki `/signed-out` sayfası (form değil, yalnız tam-sayfa "Giriş yap" bağlantısı). Bunlar belirtiyi görünür/deterministik yapar ama **SSO'yu öldürmez** — onun için (a) şart. | 🟡 **backend'e önerildi** |
 
 ---
 

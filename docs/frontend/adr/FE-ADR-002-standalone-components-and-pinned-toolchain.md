@@ -55,7 +55,7 @@ intended version readable without parsing a 10k-line lockfile.
 | Component | **Pinned version** | Why this one |
 |---|---|---|
 | `@angular/core`, `@angular/common`, `@angular/forms`, `@angular/router`, `@angular/platform-browser` | **22.0.8** | Latest published Angular release on the verification date |
-| `@angular/cli`, `@angular/build`, `@angular/compiler-cli` | **22.0.7** | Latest published tooling release; tooling and framework version independently |
+| `@angular/cli`, `@angular/build`, `@angular/compiler-cli` | **22.0.8** | Aligned to the framework version. (Written as 22.0.7 pre-scaffold; `ng new` resolved the latest 22.x = 22.0.8 for tooling too, so all `@angular/*` are one version.) |
 | **TypeScript** | **6.0.3** | ⚠️ **NOT the latest TypeScript.** `@angular/compiler-cli@22.0.8` declares `peerDependencies: { typescript: ">=6.0 <6.1" }`. The newest TypeScript is 7.0.2 and is **incompatible** with this Angular |
 | **Node.js** | **22.23.1** (LTS "Jod") | Angular 22 declares `engines.node: "^22.22.3 \|\| ^24.15.0 \|\| >=26.0.0"`. **22.23.1 satisfies `^22.22.3`** — verified. Chosen by the team on 2026-07-23; see the support-window note below |
 | `rxjs` | **7.8.2** | Satisfies Angular's peer range `^6.5.3 \|\| ^7.4.0` |

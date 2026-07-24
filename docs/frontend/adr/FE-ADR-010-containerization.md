@@ -98,19 +98,47 @@ every `up` by `keycloak-init`.
 
 ### 5b. Required nginx proxy headers
 The reverse-proxy locations must forward the browser-facing origin, otherwise
-the gateway builds an OAuth `redirect_uri` pointing at the internal container
-name and Keycloak rejects it:
+the gateway builds an OAuth `redirect_uri` Keycloak rejects.
+
+> ⚠️ **CORRECTED 2026-07-24 after a live failure.** This section originally
+> prescribed `$host` plus `X-Forwarded-Port $server_port`. Both are wrong for a
+> port-mapped container and produced
+> `redirect_uri=http://localhost/login/oauth2/code/keycloak` — **no port**. That
+> origin is not registered on `crm-bff`, so Keycloak served its
+> *invalid_redirect_uri* error page instead of the login form; the page's "Back
+> to Application" link then restarted the flow from the client's `baseUrl`
+> (`:8080`), which is why login "worked" but landed on the gateway's JSON
+> instead of returning to `:4200`. The dev proxy was unaffected (http-proxy's
+> `xfwd` copies the original `Host`), so the two environments had **diverged** —
+> exactly what §3 promises they never do.
 
 ```nginx
-proxy_set_header Host              $host;
-proxy_set_header X-Forwarded-Host  $host;
+proxy_set_header Host              $http_host;
+proxy_set_header X-Forwarded-Host  $http_host;
 proxy_set_header X-Forwarded-Proto $scheme;
-proxy_set_header X-Forwarded-Port  $server_port;
 proxy_set_header X-Real-IP         $remote_addr;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
 ```
 
-`$host` is passed through rather than hardcoded so the image is portable across
-hostnames.
+Two rules, both load-bearing:
+
+1. **`$http_host`, never `$host`.** `$host` strips the port (`localhost`);
+   `$http_host` is the `Host` header exactly as the browser sent it
+   (`localhost:4200`). The port is part of the origin, and the origin is what
+   Keycloak matches against its registered redirect URIs.
+2. **Do not set `X-Forwarded-Port`.** Inside the container nginx listens on 80,
+   so `$server_port` is `80` — the *internal* port, never the published one
+   (`4200:80`). Sending it overrides the correct port already carried by
+   `X-Forwarded-Host`. nginx has no way to learn the published port, so the
+   `Host` header stays the single source of truth.
+
+Nothing is hardcoded, so the image remains portable across hostnames and ports.
+
+**Regression check** (no browser needed):
+```bash
+curl -s -D - -o /dev/null http://localhost:4200/oauth2/authorization/keycloak | grep -i ^location
+# redirect_uri MUST read http://localhost:4200/login/oauth2/code/keycloak
+```
 
 ### 5c. Scoped exception to §4 (recorded, not silent)
 §4 forbids editing existing compose services. Enabling the frontend origin
