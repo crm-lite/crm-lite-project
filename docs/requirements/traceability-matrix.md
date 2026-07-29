@@ -28,7 +28,7 @@ real PostgreSQL + HTTP, real crm-security-starter chain).
 | KR-04 page size: default 15, only 15/30/50 (ADR-005 §Amendment) | `@AllowedPageSize` + `@Min(0)` on `GET /api/customers` | UT `AllowedPageSizeValidatorTest`, IT `browseIsPaginated`, `rejectsInvalidPaginationParameters` |
 | AC-CUST-03-02..13 demographic validation | `DemographicRequest` (VR-NAME/VR-NATID), rules (birthdate/age) | `CustomerBusinessRulesTest`, IT Turkish-name create |
 | AC-CUST-03-06 / KR-10 MERNIS keys | `MSG-CUST-NATID-VERIFICATION-FAILED` (400), `MSG-MERNIS-UNAVAILABLE` (503), fail closed pre-persist | IT `mernisRejectionLeavesNoPartialData`, `mernisUnavailableFailsClosed`; `GlobalExceptionHandlerTest`; `MernisStubIntegrationTest` (mernis-stub module) |
-| AC-CUST-03-12 + ADR-003 NAT ID unique (global, permanent) | DB UNIQUE (all rows) + `IndividualRepository.existsByNationalityId` | IT `nationalityIdOfSoftDeletedCustomerStaysReserved`, `CustomerBusinessRulesTest` |
+| AC-CUST-03-12 + ADR-003 NAT ID unique (global, permanent) | DB UNIQUE (all rows) + `IndividualRepository.existsByNationalityId`; surfaced pre-submit by `GET /api/customers/nationality-id-availability` (ADR-005 §Addendum) | IT `nationalityIdOfSoftDeletedCustomerStaysReserved`, `nationalityIdAvailabilityCoversSoftDeletedHolders`, `nationalityIdAvailabilityDoesNotShadowDetail`, `CustomerBusinessRulesTest` |
 | AC-CUST-03-17..21 contact validation | `ContactMediumRequest` VR patterns | IT `contactMediumUpdate` (invalid mobile → 400) |
 | AC-CUST-03-22 atomic aggregate create | `CustomerServiceImpl.create` (single `@Transactional`) | IT `createPersistsFullAggregate`, all rollback ITs |
 | AC-CUST-04-04 update uniqueness excl. self | `existsByNationalityIdAndIdNot` | IT `updateNationalityIdUniqueness` |
