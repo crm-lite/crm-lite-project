@@ -30,8 +30,9 @@
 > kontrolü customer-service'te hâlâ **no-op** (scope §5.9 — FE hata-gösterme
 > yolu hazır ve testli, istemci taklidi yazılmadı) ve **Account Description**
 > alanı account-service kontratında **yok** (scope §1A.7 — fazladan alan 400
-> `MSG-ACCT-IMMUTABLE-FIELD` ile reddediliyor). **FE 266/266 + BE 65/65 test**,
-> lint + konvansiyon + prod build yeşil; kayıtlar: scope §4.26/§4.27, §5.9,
+> `MSG-ACCT-IMMUTABLE-FIELD` ile reddediliyor). **FE 276/276 + BE 65/65 test**
+> (origin/dev'in auth/logout PR'ı #17 merge edildikten sonraki sayı), lint +
+> konvansiyon + prod build yeşil; kayıtlar: scope §4.26/§4.27, §5.9,
 > §5.10 (kapandı), §1A.7 + ADR-005 §Addendum.
 > Önceki: 2026-07-25 (**🏁 KAPSAM-İÇİ EKRANLARIN TAMAMI BİTTİ:
 > Create Customer wizard yazıldı (FR-CUST-03, KR-10)** — 3 adımlı wizard
