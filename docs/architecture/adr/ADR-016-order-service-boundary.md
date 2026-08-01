@@ -102,9 +102,23 @@ of its created status (§6).
    AC-SALE-01-01), `serviceAddressId` (AC-SALE-01-11), optional public
    `campaignId`, and `items[]` — one entry per basket offer carrying `offerId`
    and its raw characteristic values. Returns **201** with the order
-   representation: `orderNumber`, `orderStatus`, `accountNumber`,
-   `customerNumber`, `serviceAddressId`, `totalAmount`, and per item
-   `offerId`, `offerName`, `campaignName`, `productId`, `amount`.
+   representation.
+
+**The representation carries exactly what `order_db` owns** — `orderNumber`,
+`orderStatus`, `accountNumber`, `customerNumber`, `totalAmount`, and per item
+`offerId`, `productId`, `amount`. Nothing else.
+
+*Amended during implementation (2026-08-02).* An earlier draft of this section also
+listed `serviceAddressId`, `campaignId`, `campaignName` and a per-item `offerName`,
+on the assumption that the Submit screen's AC-SALE-01-12 field list should be echoed
+back. Building it exposed the flaw: **none of those are order-domain facts.** The
+service would have had to either persist catalog data it does not own — a second copy
+that drifts the moment an offer is renamed — or call product-service on every order
+lookup purely to decorate a response. Meanwhile the client already holds all of it:
+it assembled the basket, picked the address and chose the campaign. The only things
+it genuinely cannot know are what this service just created — the order number, the
+status, and which product each offer became — and those are precisely what is
+returned. The AC-SALE-01-12 field list describes a *screen*, not a payload.
 2. **`GET /api/orders/{orderNumber}`** — the order representation for a known
    order number. Two justifications, both concrete: it makes the 201 verifiable,
    and it is the endpoint customer-service's KR-02 `orderNumber` search (today a
@@ -214,6 +228,29 @@ which is invisible to the customer (ADR-015 §5.5) rather than mislabelled. It i
 identifiable by one query and recorded as an operational follow-up (ADR-015 §8.4)
 — **not** papered over with a speculative reconciliation job no requirement asks
 for.
+
+#### 5.3b Transport-level retries are disabled (added during implementation, 2026-08-02)
+
+`httpclient5` is on the runtime classpath (transitively, via the Eureka client), so
+Spring selects `HttpComponentsClientHttpRequestFactory` — whose default
+`DefaultHttpRequestRetryStrategy` **silently re-executes a request that answered
+503**. All three outbound clients are therefore built with
+`disableAutomaticRetries()`.
+
+This is not tidiness. `POST /api/products` is **not idempotent**: an automatic retry
+would create a *second* set of PNDG products, the orchestration would only ever learn
+the second set's ids, and the first set would be orphaned in `product_db` — no order
+referencing it, and no compensation able to find it. The involvement command
+(idempotent by ADR-013 §8.4), `confirm` and `cancel` would survive a retry; product
+creation would not, and one unsafe call is enough.
+
+It was found empirically, not by inspection: an integration test proved a single POST
+produced two orders and two product-creation calls. The same setting is applied to
+the test HTTP client, so the suite measures what one request does.
+
+**Retrying is the orchestration's decision, not the transport's.** §5.3 retries
+exactly one step — the idempotent confirm — and compensates everything else. A
+transport that quietly retried everything would make that design a fiction.
 
 #### 5.4 Why this is not a saga framework
 
