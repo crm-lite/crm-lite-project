@@ -24,3 +24,7 @@ crm:
     base-url: http://localhost:1     # never reached; AccountServiceClient is mocked in tests
   customer:
     base-url: http://localhost:1     # never reached; CustomerServiceClient is mocked in tests
+  lookup:
+    base-url: http://localhost:1     # never reached; LookupCatalogClient is mocked in tests
+    # The real LookupCatalogService (validation + contract assertion + cache) still
+    # runs — only the transport is mocked, same pattern as account-service.
