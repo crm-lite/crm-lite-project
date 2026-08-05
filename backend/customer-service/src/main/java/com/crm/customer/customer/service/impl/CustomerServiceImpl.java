@@ -6,6 +6,8 @@ import com.crm.customer.address.entity.City;
 import com.crm.customer.address.entity.District;
 import com.crm.customer.address.repository.AddressRepository;
 import com.crm.customer.address.rules.AddressBusinessRules;
+import com.crm.customer.account.AccountServiceClient;
+import com.crm.customer.account.AccountSummary;
 import com.crm.customer.common.CurrentActorProvider;
 import com.crm.customer.common.exception.BusinessException;
 import com.crm.customer.common.exception.MessageKeys;
@@ -22,6 +24,7 @@ import com.crm.customer.customer.entity.Party;
 import com.crm.customer.customer.entity.PartyRole;
 import com.crm.customer.customer.entity.Role;
 import com.crm.customer.customer.mapper.CustomerMapper;
+import com.crm.customer.customer.repository.ChildRecordCriterion;
 import com.crm.customer.customer.repository.CustomerRepository;
 import com.crm.customer.customer.repository.CustomerSpecifications;
 import com.crm.customer.customer.repository.IndividualRepository;
@@ -34,6 +37,8 @@ import com.crm.customer.lookup.LookupCatalogService;
 import com.crm.customer.lookup.LookupContract;
 import com.crm.customer.mernis.MernisClient;
 import com.crm.customer.mernis.MernisRejectedException;
+import com.crm.customer.order.OrderServiceClient;
+import com.crm.customer.order.OrderSummary;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +48,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -63,6 +69,10 @@ public class CustomerServiceImpl implements CustomerService {
     private final CustomerMapper customerMapper;
     private final LookupCatalogService lookupCatalogService;
     private final MernisClient mernisClient;
+    // KR-02 child-record search criteria: the ONLY doors into account_db / order_db
+    // (ADR-013 §5, ADR-016 §3.2). No repository, entity or datasource is shared.
+    private final AccountServiceClient accountServiceClient;
+    private final OrderServiceClient orderServiceClient;
     // Audit attribution (ADR-004): Keycloak sub of the authenticated request.
     private final CurrentActorProvider currentActor;
 
@@ -70,16 +80,61 @@ public class CustomerServiceImpl implements CustomerService {
      * ADR-005: no criteria = paginated browse of all active customers
      * (AC-CUST-01-00); the former at-least-one-criterion rule was removed by the
      * analyst decision in FR/AC v8 (2026-07-16).
+     *
+     * <p>KR-02 / AC-CUST-01-04: {@code accountNumber} and {@code orderNumber} name
+     * CHILD records that live in other services' databases. They are resolved to their
+     * owning customer FIRST, through the owning service's own public API (ADR-013 §5 /
+     * ADR-016 §3.2), and only then folded into the local predicate — customer-service
+     * never reads {@code account_db} or {@code order_db}, never joins across them and
+     * never holds a copy of their tables.
      */
     @Override
     public Page<CustomerDetailResponse> search(String firstName, String lastName, String nationalityId,
                                                Long customerNumber, String gsmNumber,
                                                String accountNumber, String orderNumber, Pageable pageable) {
-        businessRules.checkNoUnsupportedCrossServiceSearchCriterion(accountNumber, orderNumber);
+        ChildRecordCriterion accountOwner = resolveAccountNumber(accountNumber);
+        ChildRecordCriterion orderOwner = resolveOrderNumber(orderNumber);
 
-        Specification<Customer> spec =
-                CustomerSpecifications.search(firstName, lastName, nationalityId, customerNumber, gsmNumber);
+        Specification<Customer> spec = CustomerSpecifications.search(
+                firstName, lastName, nationalityId, customerNumber, gsmNumber, accountOwner, orderOwner);
         return customerRepository.findAll(spec, pageable).map(customerMapper::toDetailResponse);
+    }
+
+    /**
+     * KR-01: exact match. Only a visible, ACTIVE 224 Billing Account resolves — a
+     * passivated account is account-service's soft delete (FR-ACCT-04: "delete =
+     * passivation"), and the K-8 223 Customer Account answers 404 there by design
+     * (ADR-013 §4.5), so it can never become a search key.
+     *
+     * <p>An unresolved number stays a PRESENT criterion that matches nothing; see
+     * {@link ChildRecordCriterion}. An outage propagates as a 503 rather than an empty
+     * page (fail closed, the same rule ADR-002 applies to the shared catalog).
+     */
+    private ChildRecordCriterion resolveAccountNumber(String accountNumber) {
+        if (!StringUtils.hasText(accountNumber)) {
+            return ChildRecordCriterion.absent();
+        }
+        return accountServiceClient.fetchAccount(accountNumber)
+                .filter(AccountSummary::isActive)
+                .map(AccountSummary::customerNumber)
+                .map(ChildRecordCriterion::ownedBy)
+                .orElseGet(ChildRecordCriterion::unmatched);
+    }
+
+    /**
+     * KR-01: exact match. Only an order still in progress (MIDLWARE) resolves; a
+     * CANCELLED order is a compensated, rolled-back sale (ADR-016 §6) and must not
+     * surface its customer as a hit.
+     */
+    private ChildRecordCriterion resolveOrderNumber(String orderNumber) {
+        if (!StringUtils.hasText(orderNumber)) {
+            return ChildRecordCriterion.absent();
+        }
+        return orderServiceClient.fetchOrder(orderNumber)
+                .filter(OrderSummary::isInProgress)
+                .map(OrderSummary::customerNumber)
+                .map(ChildRecordCriterion::ownedBy)
+                .orElseGet(ChildRecordCriterion::unmatched);
     }
 
     @Override

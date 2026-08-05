@@ -4,7 +4,34 @@
 > Hem projeye sonradan dönen geliştirici, hem de sıfırdan bağlam kuran bir AI agent bu dosyayı
 > okuyarak "nerede kaldık, neden böyle yapıldı, sırada ne var" sorularını cevaplayabilmelidir.
 >
-> **Son güncelleme:** 2026-08-02 (**FR-SALE §2.7 UYGULANDI — satış akışı uçtan uca:**
+> **Son güncelleme:** 2026-08-05 (**KR-02 UYGULANDI — Customer Search'ün
+> `accountNumber`/`orderNumber` kriterleri artık GERÇEK: 501 kapısı KALKTI.**
+> `CustomerBusinessRules.checkNoUnsupportedCrossServiceSearchCriterion` **silindi**;
+> `MSG-FEATURE-NOT-IMPLEMENTED` artık **hiçbir servis tarafından üretilmiyor**.
+> customer-service her numarayı **sahibi olan servisin mevcut public API'siyle**
+> çözüyor — `GET /api/accounts/{n}` (ADR-013 §5) ve `GET /api/orders/{n}`
+> (ADR-016 §3.2, zaten bu amacı yazıyordu); ikisi de yanıtında `customerNumber`
+> taşıdığı için **hiçbir yeni uç, kontrat değişikliği veya id çevirisi
+> gerekmedi**. Yeni sınır paketleri `com.crm.customer.{account,order}`
+> (Client + Summary + Properties + Unavailable exception) ve iki yeni
+> `RestClient` bean'i — Eureka üzerinden **doğrudan**, kullanıcı token'ı taşınarak
+> (ADR-010), gateway'den DEĞİL. **`account_db`/`order_db` okunmuyor, join
+> yapılmıyor, tablo kopyalanmıyor.** Kurallar: yalnız **Active** hesap ve yalnız
+> **MIDLWARE** sipariş eşleşir (pasif hesap = FR-ACCT-04 soft delete'i; CANCELLED =
+> telafi edilmiş satış), müşterinin kendisi de aktif olmalı; **dolu ama çözülemeyen
+> numara HİÇBİR ŞEYLE eşleşmez** (`cb.disjunction()` — kriteri düşürmek sorguyu
+> sessizce browse moduna genişletirdi); numaralar global tekil olduğu için
+> **join yok**, sayfa metadata'sı **distinct müşteri** sayar; sahip servis
+> erişilemezse **503 `MSG-SERVICE-UNAVAILABLE`** (fail-closed, boş sayfa DEĞİL).
+> Compose'a `depends_on` **eklenmedi** — account-service zaten customer-service'e
+> bağlı, ters kenar başlangıç döngüsü yaratırdı. **KR-01 vs AC-CUST-01-03
+> çelişkisi kaydedildi ve KAPANDI: v8-2 metninde çelişki YOK, ikisi de Account/Order
+> Number için "birebir" diyor** (`document-delta.md` §Conflict #7). ⚠ Ayrıca
+> kaydedildi: repodaki FR/AC dosyası artık **v8-2** ama tüm dokümanlar hâlâ
+> v8-1'i gösteriyor ve v8-2 delta bölümü YOK (delta #8 — ayrı iş).
+> Test kanıtı: customer-service **91/91**, frontend **409/409**. Detay: §4.4,
+> ADR-005 §Addendum 2026-08-05, `docs/api/customer-service.md`.)
+> Önceki durum: 2026-08-02 (**FR-SALE §2.7 UYGULANDI — satış akışı uçtan uca:**
 > YENİ `order-service` (port 8087, `order_db`, `com.crm.order`) FR-SALE-01/02'yi
 > hayata geçirdi (**ADR-016**); product-service'e **yazma dilimi** (**ADR-015**),
 > account-service'e **involvement yazma komutu** eklendi (**ADR-013 §3.6/§7/§8**).
@@ -396,7 +423,22 @@ crm-lite-project-dev/
   eşleşme ("Kemal" → "Ali Kemal"i bulur; "li" → "Ali"yi BULMAZ); `lastName` = Last Name'de
   kelime-başı; ikisi doluysa AND. `gsmNumber` = mobile_phone **prefix**; `nationalityId`/`customerId`
   birebir. Dolu kriter grupları OR'lanır; yalnız aktif müşteriler; sonuçlar müşteri bazlı distinct
-  (tüm join'ler to-one). `accountNumber`/`orderNumber` → hâlâ 501 (account/order domain'leri yok).
+  (tüm join'ler to-one).
+- **`accountNumber`/`orderNumber` (KR-02 — YENİ, 05.08.2026, ADR-005 §Addendum):** artık
+  **birebir** eşleşen gerçek kriterler; 501 kapısı kalktı. Her numara **sahibi olan
+  servisin mevcut public ucundan** çözülür (`GET /api/accounts/{n}` → `AccountSummary`,
+  `GET /api/orders/{n}` → `OrderSummary` — ikisi de yanıtında `customerNumber`
+  taşıdığı için yeni uç/kontrat gerekmedi) ve sonuç `cust.customer_number` eşitliği
+  olarak **aynı OR ifadesine** girer. Yalnız **Active** hesap ve yalnız **MIDLWARE**
+  sipariş sayılır (pasif hesap = FR-ACCT-04 soft delete'i, CANCELLED = telafi edilmiş
+  satış); K-8 223 hesabı account-service'te zaten 404 olduğu için asla arama anahtarı
+  olamaz. **Çözülemeyen dolu numara FALSE predicate'i üretir** — kriteri düşürmek
+  sorguyu sessizce browse moduna genişletirdi. Numaralar global tekil olduğundan
+  **join EKLENMEZ**; sayfa metadata'sı distinct müşteri sayar. Sahip servis
+  erişilemezse **503 `MSG-SERVICE-UNAVAILABLE`** (fail-closed). Numaralar uçtan uca
+  **String** (baştaki sıfır anlamlı); kriter boşsa **hiçbir dış çağrı yapılmaz**.
+  Sınır kodu: `com.crm.customer.{account,order}` + `HttpClientConfig`'teki iki yeni
+  `RestClient` (Eureka üzerinden doğrudan, kullanıcı token'ı taşınır — ADR-010).
   KR-04 sayfalama (ADR-005 §Amendment, 29.07.2026): `size` varsayılanı **15**, kabul edilen tek
   değerler **15/30/50** — başka her değer (17, 999999, 0) 400 `MSG-VALIDATION-ERROR`; negatif `page`
   de aynı şekilde 400 (0 ve -1 daha önce `PageRequest.of` üzerinden 500 dönüyordu). `page`'in üst
@@ -1296,14 +1338,17 @@ lokalizasyon (varsayılan dil İngilizce), Keycloak login sayfası proje teması
 - [x] ~~gsmNumber araması 501~~ — **yerel implementasyon** (CNTC_MEDIUM artık customer_db'de).
 - [x] ~~nationality_id tekillik çelişkisi~~ — **ADR-003 ile kapandı**: kalıcı global DB UNIQUE.
 - [x] ~~Testcontainers yok~~ — **kuruldu**: entegrasyon testleri gerçek PostgreSQL container'ına karşı.
-- [ ] **`accountNumber` araması** 501'den gerçek account-service entegrasyonuna çevrilecek (KR-02) —
-  account-service ARTIK VAR (2026-07-23), bu bilinçli olarak **ayrı bir takip PR'ı** (bu sprint
-  customer-service'e dokunmadı); `orderNumber` hâlâ order domain'ini bekliyor.
+- [x] ~~**`accountNumber`/`orderNumber` araması** 501'den gerçek entegrasyona çevrilecek (KR-02)~~ —
+  **TAMAMLANDI 2026-08-05** (bu sayfanın beklediği takip PR'ı): `AccountServiceClient` →
+  `GET /api/accounts/{n}` ve `OrderServiceClient` → `GET /api/orders/{n}`; 501 kuralı
+  **silindi**. Detay §4.4 + ADR-005 §Addendum.
 - [ ] `checkCustomerHasNoActiveProducts` (AC-CUST-05-03) + müşteri silmede fatura hesabı
-  pasifleştirme (AC-CUST-05-04'ün kalan kısmı) → aynı takip PR'ında gerçek account-service
-  çağrısına çevrilecek.
+  pasifleştirme (AC-CUST-05-04'ün kalan kısmı) → **hâlâ no-op**. KR-02 turu account-service'e
+  giden istemciyi kurdu ama yalnız aramanın ihtiyaç duyduğu **tek okumayı** açtı; silme
+  guard'ları kendi kurallarını gerektiriyor (hangi hesaplar pasifleşecek, iki domain arasında
+  "aktif ürün" ne demek) — ayrı iş.
 - [ ] `checkAddressIsNotInUse` (AC-ADDR-04-04, `MSG-ADDR-IN-USE`) — `cust_acct.address_id` artık
-  var; aynı takip PR'ında gerçek kontrole çevrilecek.
+  var; hâlâ no-op, aynı ayrı işin parçası.
 - [ ] Arama performansı: kelime-başı `'% q%'` LIKE deseni index kullanamaz — veri hacmi büyürse `pg_trgm`
   değerlendirilmeli (şu an bootcamp ölçeğinde sorun değil).
 
@@ -1373,8 +1418,9 @@ serbest (PR squash'lanıyor).
   - Katalog erişilemezse davranış açıktır: **yazma işlemleri 503 ile fail-closed** (kısmi kayıt kalmaz,
     bilinmeyen kod sessizce kabul edilmez); okuma/aktif-filtreleme yerel `status_id + deleted_date`
     üzerinden çalışmaya devam eder.
-- **customer-service: accountNumber/orderNumber araması kasıtlı 501** — account/order domain'leri kurulana
-  kadar (gsmNumber artık YEREL ve çalışıyor). product-service'in gelişi bunu DEĞİŞTİRMEDİ.
+- ~~**customer-service: accountNumber/orderNumber araması kasıtlı 501**~~ — **KAPANDI 2026-08-05**
+  (ADR-005 §Addendum): ikisi de sahibi olan servisin public ucundan çözülüyor, `account_db`/
+  `order_db` okunmadan. `MSG-FEATURE-NOT-IMPLEMENTED` artık hiçbir serviste üretilmiyor.
 - **product-service salt-okunur (2026-07-29)** — ürün yaratma/provizyon/sepet/sipariş YOK;
   `cust_acct_prod_invl`'e **yazma** hâlâ uygulanmadı (yalnız okuma ucu var); karakteristik
   tabloları endpoint'siz; teklif fiyatları analist onayı bekleyen fixture. Hiçbiri

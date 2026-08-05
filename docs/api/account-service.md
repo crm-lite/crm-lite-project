@@ -345,8 +345,15 @@ curl -sS -H "Accept: application/json" \
   specified, but reachable in real use for the first time.
 - **No involvement removal exists** — not through this API, not through any
   other. Product cancellation is out of phase (KR-7).
-- customer-service's `accountNumber` search (KR-02), its customer-delete
-  active-product guard and billing-account passivation, and the address
-  `MSG-ADDR-IN-USE` in-use check remain customer-service TODOs — converting them
-  to real calls against this service is a **separate follow-up PR** (this sprint
-  does not modify customer-service).
+- ~~customer-service's `accountNumber` search (KR-02)~~ — **done 2026-08-05**:
+  customer-service now calls `GET /api/accounts/{accountNumber}` (this document's
+  detail endpoint, unchanged) to resolve the search criterion to `customerNumber`,
+  and matches only when `accountStatus` is `"Active"`. **No endpoint, field or
+  status was added here for it** — the detail representation already carried
+  everything needed, including the ADR-013 §3.6 `customerNumber`. The K-8 223's
+  404 keeps it unsearchable for free. See backend ADR-005 §Addendum 2026-08-05.
+- customer-service's customer-delete active-product guard and billing-account
+  passivation, and the address `MSG-ADDR-IN-USE` in-use check, **remain
+  customer-service TODOs**. The KR-02 work added an outbound client to this
+  service but exposed only the single read the search needs; those guards are a
+  separate change.

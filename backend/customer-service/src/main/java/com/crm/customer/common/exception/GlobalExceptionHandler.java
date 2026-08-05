@@ -1,9 +1,11 @@
 package com.crm.customer.common.exception;
 
+import com.crm.customer.account.AccountServiceUnavailableException;
 import com.crm.customer.lookup.LookupCatalogUnavailableException;
 import com.crm.customer.lookup.UnknownLookupCodeException;
 import com.crm.customer.mernis.MernisRejectedException;
 import com.crm.customer.mernis.MernisUnavailableException;
+import com.crm.customer.order.OrderServiceUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -202,6 +204,28 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUpstreamUnavailable(LookupCatalogUnavailableException ex,
                                                                    HttpServletRequest request) {
         log.error("Upstream dependency unavailable on {} {}: {}", request.getMethod(), request.getRequestURI(),
+                ex.getMessage(), ex);
+        ErrorResponse body = ErrorResponse.builder()
+                .timestamp(Instant.now())
+                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+                .error(HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase())
+                .messageKey(MessageKeys.SERVICE_UNAVAILABLE)
+                .message("A required service is unavailable; the operation was not performed")
+                .path(request.getRequestURI())
+                .build();
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    // KR-02 fail-closed rule: the owning service of a child-record search criterion
+    // (account-service for accountNumber, order-service for orderNumber) could not be
+    // reached, so the criterion could not be resolved. Answering 200 with an empty page
+    // would report "no such customer" for a customer that exists, and dropping the
+    // criterion would widen the query to every active customer — the query simply could
+    // not be run, and that is what this says.
+    @ExceptionHandler({AccountServiceUnavailableException.class, OrderServiceUnavailableException.class})
+    public ResponseEntity<ErrorResponse> handleSearchDependencyUnavailable(RuntimeException ex,
+                                                                            HttpServletRequest request) {
+        log.error("Search dependency unavailable on {} {}: {}", request.getMethod(), request.getRequestURI(),
                 ex.getMessage(), ex);
         ErrorResponse body = ErrorResponse.builder()
                 .timestamp(Instant.now())
