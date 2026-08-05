@@ -150,8 +150,8 @@ interfaces only, which is what makes "step 4 fails" testable at all).
 |---|---|---|
 | ~~KR-02 `accountNumber` search resolution~~ | — | ✅ **implemented 2026-08-05** — customer-service → account-service `GET /api/accounts/{n}`; see the Implemented section above |
 | ~~KR-02 `orderNumber` search resolution~~ | — | ✅ **implemented 2026-08-05** — customer-service → order-service `GET /api/orders/{n}` |
-| AC-CUST-05-03 active-product delete guard | customer-service → account/product (**still open**; the KR-02 sprint added only the account READ the search needs) | documented no-op |
-| AC-CUST-05-04 billing-account passivation on customer delete | customer-service → account-service (**still open**) | documented no-op (local aggregate is passivated) |
+| ~~AC-CUST-05-03 active-product delete guard~~ | — | ✅ **enforced 2026-08-05** — not by the upfront `checkCustomerHasNoActiveProducts` (still a no-op) but one layer deeper: a 409 from account-service's delete becomes 409 `MSG-CUST-HAS-PRODUCTS` |
+| ~~AC-CUST-05-04 billing-account passivation on customer delete~~ | — | ✅ **implemented 2026-08-05** — account-service `GET /api/accounts?customerId=` + `DELETE /api/accounts/{n}` for every Active row, run BEFORE the local passivation |
 | AC-ADDR-04-04 address in-use check (`MSG-ADDR-IN-USE`) | customer-service → account-service (**still open**; `cust_acct.address_id` now exists) | documented no-op |
 | Product involvement **population** (`cust_acct_prod_invl` writes) | future order/sale flow via an account-service command/API or consumed event — **never direct account_db writes** (ADR-013 §5). The **read** side now exists (`product-ids`, see above) | seed/test rows only (V2 + V3); real, queried guard state |
 | AC-AUTH-01-02/06/07/08/09 login-page UI details (button state, masking, 64-char cap) + LBL-LANGUAGE on the login screen | Keycloak **project theme** (future work) | standard Keycloak login page + built-in EN/TR i18n serve the flow today |
@@ -161,7 +161,7 @@ interfaces only, which is what makes "step 4 fails" testable at all).
 | ~~FR-SALE-01..02 (BSN_INTER, CUST_ORD, CUST_ORD_ITEM, basket validation MSG-SALE-*)~~ | — | ✅ **implemented 2026-08-02** (ADR-016): `order-service` (:8087, `order_db`) — see the FR-SALE section above |
 | Product involvement **removal** | nobody — deliberately does not exist | KR-7 leaves product cancellation out of phase; no API removes a product from an account (ADR-013 §8.6) |
 | Transfer / service-address-change flows (GNL_TP `TRANSFER`/`CANCEL`) | not assigned | not implemented — **no FR/AC covers them** although the mock UI offers them as account-row actions (ADR-016 §8.2). Analyst question, not a build task |
-| FR-LANG-01 (TR/EN catalogs, **default EN** per 16.07.2026) | frontend + planned localization capability | backend returns language-neutral `messageKey`s |
+| FR-LANG-01 (TR/EN catalogs, **default EN**, AC-LANG-01-01, unchanged since 16.07.2026 through v8-2) | frontend + planned localization capability | backend returns language-neutral `messageKey`s |
 
 ## Known document conflicts (recorded, not silently resolved)
 
@@ -184,11 +184,11 @@ interfaces only, which is what makes "step 4 fails" testable at all).
    ADR-006: credentials are entered on the (themable) Keycloak login page; the
    AC-AUTH-01 UI criteria bind that page, not an Angular form.
 7. **Use-case doc FR-ACCT-04 still describes deletion as removal from the active
-   list** ("aktif hesap listesinden kaldırılması" / Adım 5) — contradicts FR v8-1
-   AC-ACCT-04-02 (deletion = passivation, stays visible as Passive). FR v8-1 governs;
-   use-case wording not updated by this revision.
+   list** ("aktif hesap listesinden kaldırılması" / Adım 5) — contradicts FR v8-2
+   AC-ACCT-04-02 (deletion = passivation, stays visible as Passive, unchanged since
+   v8-1). FR v8-2 governs; use-case wording not updated by this revision.
 8. **draw.io ACCT-04 node still labeled "Hesabı aktif listeden kaldır"** — same
-   conflict as #7; FR v8-1 AC-ACCT-04-02 governs.
+   conflict as #7; FR v8-2 AC-ACCT-04-02 governs.
 9. **Entity/seed workbook `CUST_ACCT` sample `account_number` values don't satisfy
    KR-11** (`0101112900`, `0101112911`, `0101112915`, `0101112441` — wrong segment
    digit, no check digit) — flagged for analysts; account-service's real seed must

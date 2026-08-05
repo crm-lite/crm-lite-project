@@ -4,7 +4,70 @@ Reconciliation record: what changed in the analyst-approved source documents
 (`docs/source/**`) between revisions, and how each change was handled in this
 repository. The binary source documents themselves are never edited here.
 
-## v8-1 Final, 23.07.2026 revision (current)
+## v8-2, 03.08.2026 revision (current)
+
+**Supersedes the 23.07.2026 v8-1 Final document** (see the section below for that
+revision's own delta, which remains valid history). Confirmed via internal
+document metadata, not filename alone:
+
+| | `CRM_Lite_FR_AC_v8-1_Final.docx` | `CRM_Lite_FR_AC_v8-2.docx` |
+|---|---|---|
+| `docProps/core.xml` revision | 37 | 45 |
+| `dcterms:modified` | 2026-07-23T07:08:00Z | 2026-08-03T15:02:00Z |
+| Header "Son güncelleme" line | 23.07.2026 | 03.08.2026 |
+
+The v8-2 header's own change list scopes this revision to **SALE-02-01, SALE-01
+Validasyon (basket validation wording), and word-level corrections** only — the
+analyst's own framing is editorial clarity, not a behavioral change:
+
+- **AC-SALE-02-01 simplified**: the LBL-START-NEW-SALE enablement rule dropped its
+  "offered AND active" two-condition phrasing (v8-1) in favor of a single condition —
+  the action is enabled only on an **Active** billing-account row, full stop. No
+  backend code change needed: every current implementation and doc (order-service,
+  account-service) already only ever checked Active/Passive account status, never a
+  separate "offered" concept — see `docs/api/order-service.md` and
+  `docs/api/account-service.md`.
+- **Three SALE basket-validation rows rewritten as explicit error conditions**
+  ("İnternet teklifi bulunmuyor" / `MSG-SALE-NO-INTERNET`, "Kaynak teklifi bulunmuyor"
+  / `MSG-SALE-NO-RESOURCE`, "Aktivasyon teklifi bulunmuyor" / `MSG-SALE-NO-ACTIVATION`)
+  — phrased as failure conditions rather than descriptive rules. The message keys
+  themselves are unchanged. No backend code change needed: product-service/
+  order-service docs already only ever cited the message keys, not old descriptive
+  prose.
+- **Word-level corrections** elsewhere in the document — no ID, message key, or
+  behavioral wording affected (per the analyst's own change list; not independently
+  re-diffed line-by-line beyond the SALE-01/02 sections above).
+
+**Conclusion: v8-2 is a clarifying revision, not a behavioral one.** No FR/AC-driven
+code change is required. The one substantive discussion this revision *does* open —
+AC-SALE-01-15's "Sipariş Alındı, İşleniyor..." status message being a plausible
+business justification for a future genuinely-async, long-running provisioning flow
+(outbox/Kafka/saga) — remains a forward-looking architecture question, not a v8-2
+requirement; see ADR-016 §5.4's own "if FR-SALE ever grows a genuine long-running
+provisioning step, that flow gets the infrastructure, with its own ADR" clause.
+Nothing in v8-2 obligates that work on its own.
+
+### Documentation reconciliation (2026-08-05)
+
+The following markdown docs cited the superseded v8-1 baseline as current and were
+updated to cite v8-2 — version-string/date bumps only, no content rewrites, since no
+file quoted the old two-condition AC-SALE-02-01 wording or the old basket-message
+prose: `CLAUDE.md`, `PROJECTBRAIN.md`, `docs/README.md`, `docs/postman/README.md`,
+`docs/architecture/service-boundaries.md`,
+`docs/architecture/account-service-decisions.md`,
+`docs/requirements/functional-requirements.md`,
+`docs/requirements/traceability-matrix.md`, `docs/api/customer-service.md`,
+`docs/api/order-service.md`, `docs/api/product-service.md`,
+`docs/api/account-service.md`, `docs/frontend/mock-ui-analysis.md`.
+**ADR-013, ADR-014, ADR-016, ADR-005 and ADR-003** each received a short "Reviewed
+YYYY-MM-DD (FR/AC v8-2)" addendum under their existing `## Status` (or, for ADR-005,
+a new `## Addendum` section matching its own established style) rather than a
+rewrite — preserving each ADR's original historical Context/Decision sections
+unedited. ADR-003 additionally got a substantive re-verification (not just a
+citation bump): its "open conflict" section's AC-CUST-03-12 claim was re-checked
+directly against the v8-2 docx text and confirmed unchanged.
+
+## v8-1 Final, 23.07.2026 revision (history)
 
 **Supersedes the 16.07.2026 v8 Final document** (see the section below for that
 revision's own delta, which remains valid history). Confirmed via internal
@@ -240,10 +303,10 @@ ADR-013 §8 (write side) and ADR-016.
 
 | # | Conflict | Where | Status |
 |---|---|---|---|
-| 7 | **Use-case doc still describes FR-ACCT-04 as list removal**, not passivation: "Beklenen Çıktı" says "aktif ürün bağlantısı bulunmayan fatura hesabının **aktif hesap listesinden kaldırılması**"; Ana Senaryo Adım 5 says the system "**fatura hesabını aktif hesap listesinden kaldırır**". Both contradict FR v8-1 AC-ACCT-04-02 (passivation, stays visible as Passive) | Use-case doc, "Fatura Hesabı Silme (FR-ACCT-04)" | **FR v8-1 AC-ACCT-04-02 governs** (passivation). Use-case wording is superseded and not updated by this revision — flagged for analysts |
-| 8 | **Draw.io ACCT-04 delete-flow node still labeled "Hesabı aktif listeden kaldır"** (remove account from active list) | `CRMLite_Diagrams_Final.drawio`, ACCT-04 flow | Same conflict as #7 — FR v8-1 AC-ACCT-04-02 governs; diagram not updated by this revision — flagged for analysts |
+| 7 | **Use-case doc still describes FR-ACCT-04 as list removal**, not passivation: "Beklenen Çıktı" says "aktif ürün bağlantısı bulunmayan fatura hesabının **aktif hesap listesinden kaldırılması**"; Ana Senaryo Adım 5 says the system "**fatura hesabını aktif hesap listesinden kaldırır**". Both contradict FR v8-2 AC-ACCT-04-02 (passivation, stays visible as Passive, unchanged since v8-1) | Use-case doc, "Fatura Hesabı Silme (FR-ACCT-04)" | **FR v8-2 AC-ACCT-04-02 governs** (passivation). Use-case wording is superseded and not updated by this revision — flagged for analysts |
+| 8 | **Draw.io ACCT-04 delete-flow node still labeled "Hesabı aktif listeden kaldır"** (remove account from active list) | `CRMLite_Diagrams_Final.drawio`, ACCT-04 flow | Same conflict as #7 — FR v8-2 AC-ACCT-04-02 governs; diagram not updated by this revision — flagged for analysts |
 | 10 | **Workbook `PROD_OFR` rows carry no price, but AC-SALE-01-12 requires amounts** (see deviation P1 above; extended by P5's 7 additional invented offer prices, 2026-07-31). Invented fixture values are in the product-service seed; the analyst document names no prices anywhere | `CRM_Lite_Entity_Seed_PreviewV8_Final.xlsx`, `PROD_OFR` sheet vs FR §2.7 AC-SALE-01-12 | Workbook not edited. **Awaiting analyst-approved price list**; until then all seeded prices (299/149/49 plus the P5 additions) are explicitly provisional |
-| 11 | **FR §2.6 never mentions how a product links to a billing account**, yet FR-PROD-01 lists products *per account*. The workbook answers it only via `CUST_ACCT_PROD_INVL` (in `account_db`) — `PROD` has no account column | FR v8-1 §2.6 vs workbook `PROD` / `CUST_ACCT_PROD_INVL` sheets | Resolved architecturally, not by inventing a column: product-service **composes** over account-service's `product-ids` endpoint (ADR-013 §5). Flagged for analysts as an FR gap; **ADR-015 owed** |
+| 11 | **FR §2.6 never mentions how a product links to a billing account**, yet FR-PROD-01 lists products *per account*. The workbook answers it only via `CUST_ACCT_PROD_INVL` (in `account_db`) — `PROD` has no account column | FR v8-2 §2.6 vs workbook `PROD` / `CUST_ACCT_PROD_INVL` sheets | Resolved architecturally, not by inventing a column: product-service **composes** over account-service's `product-ids` endpoint (ADR-013 §5). Flagged for analysts as an FR gap; **ADR-015 owed** |
 | 9 | **Entity/Seed workbook `CUST_ACCT` seed rows use legacy `account_number` values that do not satisfy KR-11**: `0101112900`, `0101112911`, `0101112915`, `0101112441` — all start with segment digit `0`, not the fixed `1` required for this phase, and carry no verifiable check digit. `docs/api/customer-service.md`'s `accountNumber=0101112900` curl example (501 smoke test) also happens to reuse one of these legacy values as an illustrative query param — harmless there (the endpoint is unimplemented and returns 501 regardless of the value's format), but not a valid seed once account-service is built | `CRM_Lite_Entity_Seed_PreviewV8_Final.xlsx`, `CUST_ACCT` sheet | Workbook not edited. When account-service's Flyway seed is authored, these sample account numbers must be regenerated to the KR-11 format, not copied verbatim — flagged for analysts |
 
 ### Service roadmap impact
@@ -302,7 +365,7 @@ Documents inspected (extracted content, not just filenames):
 | 5 | **Workbook `USERS (Sistem Kullanicisi)` table (`username`, `password_hash`, argon2id seed placeholders) vs Keycloak as sole credential store** | Entity workbook; FR AC-AUTH-01-03 "USERS tablosunda" | **Not implemented, by decision (2026-07-17 auth milestone):** no application password table may exist; Keycloak owns credentials/enabled-state. Seed usernames mirrored as Keycloak dev users (`ayilmaz`/`edemir` enabled, `mkaya` disabled). Recorded in **ADR-011** — awaiting analyst sign-off, workbook not edited |
 | 6 | **FR-AUTH-01 UI acceptance criteria assume an in-app login form** (button state, masking, 64-char cap, MSG-AUTH-INVALID-CRED, LBL-LANGUAGE on login) | FR v8 §2.1 + §2.8 | Credentials are entered on the **Keycloak login page** (ADR-006; ROPC/Direct Grant prohibited). The generic-error behaviour of AC-AUTH-01-03/04/05 is satisfied natively; the remaining UI/i18n details bind a future Keycloak **project theme** (standard Keycloak EN/TR i18n active today). Flagged for analyst acknowledgement |
 | 7 | ~~**KR-01 vs AC-CUST-01-03: is Account/Order Number matching exact or partial?**~~ | FR §1 KR-01 vs §2.2 AC-CUST-01-03 | ✅ **CLOSED 2026-08-05 — NO conflict exists in the canonical text; both say EXACT.** Raised while activating the two filters, so it was checked against the source rather than assumed. See the section below for the quoted wording and the precedence walk |
-| 8 | **The FR/AC source file in the repo is `CRM_Lite_FR_AC_v8-2.docx` ("Son güncelleme: 03.08.2026"), but every doc here still cites `CRM_Lite_FR_AC_v8-1_Final.docx` and this file has no v8-2 section** | `docs/source/requirements/`, commit `1e60686` "docs: replace FR/AC document with v8-2" vs `functional-requirements.md`, `CLAUDE.md`, this file | 🔴 **OPEN — flagged, not silently fixed.** The v8-2 header scopes its own change list to *"SALE-02-01, SALE 01 Validasyon, Kelime düzeltmeleri"*, and the FR-CUST-01/KR-01/KR-02 text it carries is what conflict #7 was resolved against. A full v8-1 → v8-2 reconciliation (the usual per-revision delta section above) is a **separate documentation task** and was deliberately not attempted inside the KR-02 search change |
+| 9 | ~~**The repo's FR/AC file is `CRM_Lite_FR_AC_v8-2.docx` but every doc still cites `v8-1_Final` and this file has no v8-2 section**~~ | `docs/source/requirements/`, commit `1e60686` | ✅ **CLOSED 2026-08-05 — resolved in parallel by PR #30** ("docs: reconcile FR/AC v8-2 across repo docs"), which added the v8-2 revision section above. Raised independently from the KR-02 search branch, which had deliberately left it as a separate documentation task; both landed the same day. **No contradiction between them:** conflict #7 was resolved against the v8-2 text, which is the revision #30 reconciled to |
 
 ## Conflict #7 in full — KR-01 vs AC-CUST-01-03 on Account/Order Number matching
 

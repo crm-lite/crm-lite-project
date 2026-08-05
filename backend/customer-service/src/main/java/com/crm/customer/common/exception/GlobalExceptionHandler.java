@@ -1,5 +1,6 @@
 package com.crm.customer.common.exception;
 
+import com.crm.customer.account.AccountHasActiveProductsException;
 import com.crm.customer.account.AccountServiceUnavailableException;
 import com.crm.customer.lookup.LookupCatalogUnavailableException;
 import com.crm.customer.lookup.UnknownLookupCodeException;
@@ -216,16 +217,44 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
-    // KR-02 fail-closed rule: the owning service of a child-record search criterion
-    // (account-service for accountNumber, order-service for orderNumber) could not be
-    // reached, so the criterion could not be resolved. Answering 200 with an empty page
-    // would report "no such customer" for a customer that exists, and dropping the
-    // criterion would widen the query to every active customer — the query simply could
-    // not be run, and that is what this says.
+    // AC-CUST-05-03: account-service refused to passivate a billing account because it
+    // still has active products. Reuses the analyst catalog key MSG-CUST-HAS-PRODUCTS —
+    // from the customer's point of view this is the same rejection as the (currently
+    // no-op) upfront checkCustomerHasNoActiveProducts guard, just discovered one layer
+    // deeper. Nothing was persisted (this runs before local passivation).
+    @ExceptionHandler(AccountHasActiveProductsException.class)
+    public ResponseEntity<ErrorResponse> handleAccountHasActiveProducts(AccountHasActiveProductsException ex,
+                                                                        HttpServletRequest request) {
+        ErrorResponse body = ErrorResponse.builder()
+                .timestamp(Instant.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error(HttpStatus.CONFLICT.getReasonPhrase())
+                .messageKey(MessageKeys.CUST_HAS_PRODUCTS)
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    // Fail-closed rule for BOTH flows that depend on another domain's service, merged
+    // into one handler because two @ExceptionHandler methods mapping the same exception
+    // type make Spring fail at startup with "Ambiguous @ExceptionHandler":
+    //
+    //   - AC-CUST-05-04: account-service could not be reached while passivating the
+    //     customer's billing accounts — the whole delete is refused, nothing was
+    //     persisted (local passivation runs only AFTER that step succeeds).
+    //   - KR-02: the owning service of a child-record search criterion
+    //     (account-service for accountNumber, order-service for orderNumber) could not
+    //     be reached, so the criterion could not be resolved. Answering 200 with an
+    //     empty page would report "no such customer" for a customer that exists, and
+    //     dropping the criterion would widen the query to every active customer.
+    //
+    // Both answer the same 503 MSG-SERVICE-UNAVAILABLE, so nothing is lost by sharing
+    // one method: the operation was not performed, and that is what the client is told.
     @ExceptionHandler({AccountServiceUnavailableException.class, OrderServiceUnavailableException.class})
-    public ResponseEntity<ErrorResponse> handleSearchDependencyUnavailable(RuntimeException ex,
-                                                                            HttpServletRequest request) {
-        log.error("Search dependency unavailable on {} {}: {}", request.getMethod(), request.getRequestURI(),
+    public ResponseEntity<ErrorResponse> handleUpstreamServiceUnavailable(RuntimeException ex,
+                                                                           HttpServletRequest request) {
+        log.error("Upstream dependency unavailable on {} {}: {}", request.getMethod(), request.getRequestURI(),
                 ex.getMessage(), ex);
         ErrorResponse body = ErrorResponse.builder()
                 .timestamp(Instant.now())

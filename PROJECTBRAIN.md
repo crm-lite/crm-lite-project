@@ -26,11 +26,20 @@
 > Compose'a `depends_on` **eklenmedi** — account-service zaten customer-service'e
 > bağlı, ters kenar başlangıç döngüsü yaratırdı. **KR-01 vs AC-CUST-01-03
 > çelişkisi kaydedildi ve KAPANDI: v8-2 metninde çelişki YOK, ikisi de Account/Order
-> Number için "birebir" diyor** (`document-delta.md` §Conflict #7). ⚠ Ayrıca
-> kaydedildi: repodaki FR/AC dosyası artık **v8-2** ama tüm dokümanlar hâlâ
-> v8-1'i gösteriyor ve v8-2 delta bölümü YOK (delta #8 — ayrı iş).
-> Test kanıtı: customer-service **91/91**, frontend **409/409**. Detay: §4.4,
-> ADR-005 §Addendum 2026-08-05, `docs/api/customer-service.md`.)
+> Number için "birebir" diyor** (`document-delta.md` §Conflict #7).
+> **`dev` ile birleştirildi (aynı gün iki PR daha girdi):** **#29** müşteri silerken
+> fatura hesaplarını pasifleştirmeyi (AC-CUST-05-04) ekledi ve **aynı
+> `com.crm.customer.account` paketini** başka bir amaçla yaratmıştı — paket
+> **birleştirildi**: tek `AccountServiceClient` (3 metot: `listAccounts` +
+> `passivateAccount` + `fetchAccount`), tek `AccountSummary` (3 alan —
+> `customerNumber` aramanın ihtiyacı), tek `accountRestClient` bean'i (onların
+> `nonRetryingRequestFactory`'li sürümü kazandı: DELETE idempotent değil) ve
+> `AccountServiceUnavailableException` için **tek** handler (iki ayrı
+> `@ExceptionHandler` Spring'i açılışta "ambiguous" ile düşürürdü). **#30** ise
+> v8-2 doküman mutabakatını yaptı — bu branch'in "ayrı iş" diye kaydettiği maddenin
+> ta kendisi, dolayısıyla delta #9 olarak **kapatıldı**.
+> Test kanıtı (birleşme sonrası): customer-service **94/94**, frontend **409/409**.
+> Detay: §4.4, ADR-005 §Addendum 2026-08-05, `docs/api/customer-service.md`.)
 > Önceki durum: 2026-08-02 (**FR-SALE §2.7 UYGULANDI — satış akışı uçtan uca:**
 > YENİ `order-service` (port 8087, `order_db`, `com.crm.order`) FR-SALE-01/02'yi
 > hayata geçirdi (**ADR-016**); product-service'e **yazma dilimi** (**ADR-015**),
@@ -457,8 +466,13 @@ crm-lite-project-dev/
   Create tüm satırlara bakar; update yalnız kendi kaydını hariç tutar. Yarış durumunda DB kısıtı
   `DataIntegrityViolationException` → temiz 409 `MSG-CUST-DUP-NATID` (asla 500).
 - **Soft delete (FR-CUST-05):** CUST+PARTY_ROLE+PARTY+IND+ADDR+CNTC_MEDIUM tek transaction'da pasife
-  çekilir; her satırda `status_id=PASV` + `deleted_date/by` + `updated_date/by` (invariant). Fatura
-  hesabı pasifleştirme + aktif ürün kontrolü hâlâ cross-service TODO (bilinçli, dokümante).
+  çekilir; her satırda `status_id=PASV` + `deleted_date/by` + `updated_date/by` (invariant).
+  **Fatura hesabı pasifleştirme UYGULANDI (AC-CUST-05-04, 05.08.2026 — PR #29):** yerel hiçbir
+  satıra dokunulmadan ÖNCE account-service'ten müşterinin hesapları listelenir ve **Active**
+  olanların her biri pasifleştirilir; erken başarısızlıkta geri alınacak bir şey kalmaz.
+  Hesabın hâlâ ürünü varsa 409 `MSG-CUST-HAS-PRODUCTS`, account-service erişilemezse 503 —
+  ikisi de silmeyi tamamen reddeder. Erken `checkCustomerHasNoActiveProducts` guard'ı hâlâ
+  no-op: aynı ret bir katman derinde, account-service çağrısında yakalanıyor.
 - **Role gösterimi:** yanıtlardaki `role` = `ROLE.role_name` ("Customer"); workbook ROLE tablosunda
   code kolonu yok, iç arama `findByRoleName`.
 - **Türkçe karakter desteği:** VR-NAME regex'i (1-50, trim-önce) korunuyor; curl'de gövdeyi
@@ -581,7 +595,8 @@ crm-lite-project-dev/
 
 ### 4.8 account-service ✅ (YENİ — 2026-07-23, ADR-013/014)
 - Port 8085, DB `account_db`, paket kökü `com.crm.account`. Kapsam: **FR-ACCT-01..04 + KR-11**
-  (FR v8-1 Final, 23.07.2026). Compose'da host portu YAYINLANMAZ (ADR-009); gateway route'u
+  (scope'un kaynağı FR v8-1 Final, 23.07.2026 — FR v8-2, 03.08.2026 revizyonuyla gözden
+  geçirildi, davranışsal fark yok). Compose'da host portu YAYINLANMAZ (ADR-009); gateway route'u
   `/api/accounts/**` (TokenRelay + cookie stripping); birleşik Swagger dropdown'ında kayıtlı.
 - **Tablolar (Flyway V1/V2):** `acct_tp` (YEREL hesap-tipi kataloğu, kontrat: 1=223 Customer
   Account, 2=224 Billing Account — GNL kataloğu DEĞİL), `cust_acct` (`customer_number` = dış
@@ -1342,13 +1357,14 @@ lokalizasyon (varsayılan dil İngilizce), Keycloak login sayfası proje teması
   **TAMAMLANDI 2026-08-05** (bu sayfanın beklediği takip PR'ı): `AccountServiceClient` →
   `GET /api/accounts/{n}` ve `OrderServiceClient` → `GET /api/orders/{n}`; 501 kuralı
   **silindi**. Detay §4.4 + ADR-005 §Addendum.
-- [ ] `checkCustomerHasNoActiveProducts` (AC-CUST-05-03) + müşteri silmede fatura hesabı
-  pasifleştirme (AC-CUST-05-04'ün kalan kısmı) → **hâlâ no-op**. KR-02 turu account-service'e
-  giden istemciyi kurdu ama yalnız aramanın ihtiyaç duyduğu **tek okumayı** açtı; silme
-  guard'ları kendi kurallarını gerektiriyor (hangi hesaplar pasifleşecek, iki domain arasında
-  "aktif ürün" ne demek) — ayrı iş.
+- [x] ~~Müşteri silmede fatura hesabı pasifleştirme (AC-CUST-05-04) + aktif ürün kontrolü
+  (AC-CUST-05-03)~~ — **TAMAMLANDI 05.08.2026 (PR #29).** Silme, yerel agregata dokunmadan
+  önce account-service'ten hesapları listeleyip Active olanları pasifleştiriyor; ürünü olan
+  hesap 409 `MSG-CUST-HAS-PRODUCTS`, servis erişilemezse 503. Erken
+  `checkCustomerHasNoActiveProducts` guard'ı **bilinçli olarak no-op kaldı** — aynı ret zaten
+  bir katman derinde yakalanıyor.
 - [ ] `checkAddressIsNotInUse` (AC-ADDR-04-04, `MSG-ADDR-IN-USE`) — `cust_acct.address_id` artık
-  var; hâlâ no-op, aynı ayrı işin parçası.
+  var; **hâlâ no-op**, tek kalan cross-service TODO.
 - [ ] Arama performansı: kelime-başı `'% q%'` LIKE deseni index kullanamaz — veri hacmi büyürse `pg_trgm`
   değerlendirilmeli (şu an bootcamp ölçeğinde sorun değil).
 
@@ -1425,9 +1441,10 @@ serbest (PR squash'lanıyor).
   `cust_acct_prod_invl`'e **yazma** hâlâ uygulanmadı (yalnız okuma ucu var); karakteristik
   tabloları endpoint'siz; teklif fiyatları analist onayı bekleyen fixture. Hiçbiri
   "yapıldı" diye iddia edilmiyor — bkz. §4.9 + §9.1b.
-- **customer-service: `checkCustomerHasNoActiveProducts` + fatura hesabı pasifleştirme + `MSG-ADDR-IN-USE`
-  kontrolü TODO/no-op** — ilgili domain'ler kurulunca gerçek çağrıya çevrilecek (bkz. §9.3). Bu kontrollerin
-  "yapıldığı" HİÇBİR yerde iddia edilmiyor.
+- **customer-service: `MSG-ADDR-IN-USE` kontrolü hâlâ no-op** — geriye kalan tek cross-service TODO
+  (bkz. §9.3); "yapıldığı" HİÇBİR yerde iddia edilmiyor. Fatura hesabı pasifleştirme ve aktif ürün
+  kontrolü **05.08.2026'da gerçek çağrıya çevrildi** (PR #29); erken
+  `checkCustomerHasNoActiveProducts` guard'ı bilinçli no-op kaldı, ret bir katman derinde yakalanıyor.
 - **Testcontainers kurulu** — entegrasyon testleri Docker gerektirir; Docker kapalıysa yalnız o test
   sınıfları düşer (birim testleri etkilenmez). Surefire `-Dapi.version=1.44` pin'i: Testcontainers 1.21.3'ün
   gömülü docker-java'sı Docker 29 motoruna eski API versiyonuyla ping atıyor (bkz. pom yorumları). Docker/

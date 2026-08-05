@@ -189,9 +189,9 @@ Pipeline (single transaction — any failure persists **nothing**):
 4. MERNIS verification (KR-10 / AC-CUST-03-06) via mernis-stub: rejected ⇒ **400
    `MSG-CUST-NATID-VERIFICATION-FAILED`**; unreachable ⇒ **503
    `MSG-MERNIS-UNAVAILABLE`**. Customer is NOT created in either case.
-   (These are the v8 Final analyst catalog keys — they replaced the older
-   project-specific `MSG-NATID-VERIFY-FAILED` and, for MERNIS outages, the generic
-   `MSG-SERVICE-UNAVAILABLE`.)
+   (These are the analyst catalog keys, unchanged since v8 Final through v8-2 — they
+   replaced the older project-specific `MSG-NATID-VERIFY-FAILED` and, for MERNIS
+   outages, the generic `MSG-SERVICE-UNAVAILABLE`.)
 5. Persist PARTY → IND → PARTY_ROLE → CUST (sequence-assigned `customerNumber`)
    → ADDR rows → CNTC_MEDIUM. Returns **201** with the detail payload.
 
@@ -498,11 +498,14 @@ curl -sS -w "\nHTTP Status: %{http_code}\n" "http://localhost:8080/api/customers
 - ~~`accountNumber`/`orderNumber` search → 501~~ — **done 2026-08-05**: resolved
   through account-service / order-service (see §Account Number / Order Number
   above). `MSG-FEATURE-NOT-IMPLEMENTED` is no longer produced by this service.
-- Active-product check before delete and billing-account passivation → still
-  customer-service no-ops. The outbound account-service client added for the
-  search deliberately exposes only the read this feature needs; converting the
-  delete guards is a separate change with its own rules (AC-CUST-05-03/04).
-- Address in-use check (`MSG-ADDR-IN-USE`) → no-op until account/service addresses exist.
+- ~~Billing-account passivation before delete~~ — **done 2026-08-05**
+  (AC-CUST-05-04): the delete passivates every Active Billing Account through
+  account-service first, then the local aggregate. 409 `MSG-CUST-HAS-PRODUCTS`
+  when an account still has products; 503 when account-service is unreachable.
+  The upfront `checkCustomerHasNoActiveProducts` guard remains a no-op — the same
+  rejection now surfaces one layer deeper.
+- Address in-use check (`MSG-ADDR-IN-USE`) → still a no-op, even though
+  `cust_acct.address_id` now exists.
 - All endpoints require a Keycloak-authenticated caller with the `crm-user` role
   (ADR-006..009): via the gateway that means a logged-in BFF session (browser /
   `docs/postman/README.md` §Authentication); direct calls need a valid

@@ -163,6 +163,12 @@ learns the ID was never usable.
   (`MissingServletRequestParameterException` handler added alongside), matching how
   type-mismatched parameters were already handled.
 
+## Addendum (2026-08-05) — FR/AC v8-2 review
+
+Reviewed against FR/AC v8-2 (03.08.2026): AC-CUST-01-00 and KR-04 wording are
+unchanged from the v8 Final revision this ADR implements. **No change to this
+decision.** See `docs/requirements/document-delta.md`.
+
 ## Addendum (2026-08-05) — KR-02 child-record criteria (`accountNumber`, `orderNumber`)
 
 **Status:** Accepted. Supersedes the 501 clause in Decision §5; every other decision

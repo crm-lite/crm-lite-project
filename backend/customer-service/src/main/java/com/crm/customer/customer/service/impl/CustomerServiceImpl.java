@@ -1,5 +1,7 @@
 package com.crm.customer.customer.service.impl;
 
+import com.crm.customer.account.AccountServiceClient;
+import com.crm.customer.account.AccountSummary;
 import com.crm.customer.address.dto.AddressRequest;
 import com.crm.customer.address.entity.Address;
 import com.crm.customer.address.entity.City;
@@ -66,13 +68,14 @@ public class CustomerServiceImpl implements CustomerService {
     private final ContactMediumRepository contactMediumRepository;
     private final CustomerBusinessRules businessRules;
     private final AddressBusinessRules addressBusinessRules;
+    // The ONLY doors into account_db / order_db (ADR-013 §5, ADR-016 §3.2). No
+    // repository, entity or datasource is shared. accountServiceClient serves BOTH the
+    // AC-CUST-05-04 delete passivation and the KR-02 Account Number search.
+    private final AccountServiceClient accountServiceClient;
+    private final OrderServiceClient orderServiceClient;
     private final CustomerMapper customerMapper;
     private final LookupCatalogService lookupCatalogService;
     private final MernisClient mernisClient;
-    // KR-02 child-record search criteria: the ONLY doors into account_db / order_db
-    // (ADR-013 §5, ADR-016 §3.2). No repository, entity or datasource is shared.
-    private final AccountServiceClient accountServiceClient;
-    private final OrderServiceClient orderServiceClient;
     // Audit attribution (ADR-004): Keycloak sub of the authenticated request.
     private final CurrentActorProvider currentActor;
 
@@ -257,15 +260,23 @@ public class CustomerServiceImpl implements CustomerService {
 
     /**
      * FR-CUST-05 / AC-CUST-05-04: soft-deletes the locally owned aggregate
-     * (CUST, PARTY_ROLE, PARTY, IND, ADDR, CNTC_MEDIUM) in one transaction.
-     * Billing-account passivation is cross-service future work (documented TODO in
-     * the FR traceability matrix) and is NOT claimed to happen here.
+     * (CUST, PARTY_ROLE, PARTY, IND, ADDR, CNTC_MEDIUM) in one transaction, after
+     * passivating every Billing Account account-service reports for this customer.
+     * The account-service calls run FIRST, before any local entity is touched: if one
+     * of them fails, nothing here has changed yet, so there is nothing to compensate.
+     * A retry after a partial failure is safe — accounts already Passive are skipped.
      */
     @Override
     @Transactional
     public void delete(Long customerNumber) {
         Customer customer = businessRules.checkCustomerExistsAndActive(customerNumber);
         businessRules.checkCustomerHasNoActiveProducts(customerNumber);
+
+        for (AccountSummary account : accountServiceClient.listAccounts(customerNumber)) {
+            if (account.isActive()) {
+                accountServiceClient.passivateAccount(account.accountNumber());
+            }
+        }
 
         long passiveStatusId = lookupCatalogService.resolveStatusId("status",
                 LookupContract.STATUS_PASSIVE, LookupContract.STATUS_DOMAIN_GENERAL);
