@@ -6,7 +6,7 @@ import {
   type CampaignResponse,
   type OfferResponse,
   type ServiceType,
-} from '../../../core/catalog';
+} from '../../../shared/product-catalog';
 import { isApiError } from '../../../core/http';
 import { I18nService, TranslatePipe } from '../../../core/i18n';
 import { EmptyState, Skeleton } from '../../../shared/patterns';

@@ -7,5 +7,5 @@ export {
   LANGUAGE_STORAGE_KEY,
   isLanguage,
   type Language,
-} from './language';
-export { CATALOG, type TranslationKey } from './catalog';
+} from '../../shared/i18n-catalog';
+export { CATALOG, type TranslationKey } from '../../shared/i18n-catalog';

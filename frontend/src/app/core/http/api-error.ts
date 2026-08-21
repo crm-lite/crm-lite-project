@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { CATALOG } from '../i18n/catalog';
+import { CATALOG } from '../../shared/i18n-catalog';
 
 /**
  * Error normalization (FE-ADR-008). Every backend service returns the identical

@@ -1,4 +1,4 @@
-import type { OfferResponse, ServiceType } from '../../../core/catalog';
+import type { OfferResponse, ServiceType } from '../../../shared/product-catalog';
 
 /**
  * order-service contract types (docs/api/order-service.md) plus the

@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { type CampaignResponse, type OfferResponse } from '../../../core/catalog';
+import { type CampaignResponse, type OfferResponse } from '../../../shared/product-catalog';
 import { SaleBasketStore } from './sale-basket.store';
 
 const INTERNET: OfferResponse = {

@@ -4,7 +4,7 @@
  * `OfferController` + `CharacteristicResponse` in the backend source — it is
  * missing from that document's endpoint table, scope §2B).
  *
- * WHY THIS LIVES IN core/ AND NOT features/product/ (scope §1.6 / FE-ADR-003):
+ * WHY THIS LIVES IN shared/ AND NOT features/product/ (scope §1.6 / FE-ADR-003):
  * the catalog is consumed by TWO features — `features/product/` (read side) and
  * the `features/order/` sale wizard — and a feature may never import a sibling
  * feature. `core/lookup/` is the established precedent for exactly this shape:

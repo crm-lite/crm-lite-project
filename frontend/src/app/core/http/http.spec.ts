@@ -6,7 +6,7 @@ import {
 } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { CATALOG } from '../i18n/catalog';
+import { CATALOG } from '../../shared/i18n-catalog';
 import { AuthService } from '../auth/auth.service';
 import {
   FIELD_FALLBACK_KEY_VALUES,

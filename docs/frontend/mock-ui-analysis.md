@@ -1397,7 +1397,7 @@ eşleşme). Yani:
 | # | Konu | **Karar** |
 |---|---|---|
 | 1 | Yaklaşım | **Signal tabanlı kendi i18n servisimiz.** Dış kütüphane yok — §7'deki "sıfır bağımlılık" doktrini korunur. `lang` bir `signal`, sözlük bir `computed`; dil değişince Angular tüm şablonları otomatik yeniden değerlendirir ⇒ AC-LANG-01-02 ek iş olmadan sağlanır |
-| 2 | Katalog yapısı | **Tek dosya, `key → {en, tr}`** (`core/i18n/catalog.ts`). Analist dokümanının tablo yapısıyla birebir ⇒ docx mutabakatı bir diff işlemi; "en'de var, tr'de yok" kayması yapısal olarak imkânsız; anahtar tipi `keyof typeof CATALOG` ile compile-time güvenli |
+| 2 | Katalog yapısı | **Tek dosya, `key → {en, tr}`** (`shared/i18n-catalog/`). Analist dokümanının tablo yapısıyla birebir ⇒ docx mutabakatı bir diff işlemi; "en'de var, tr'de yok" kayması yapısal olarak imkânsız; anahtar tipi `keyof typeof CATALOG` ile compile-time güvenli |
 | 3 | Kalıcılık | **`localStorage` (`crm.lang`) + Keycloak `ui_locales`.** Login redirect'i `/oauth2/authorization/keycloak?ui_locales={lang}` olarak kurulur ⇒ Keycloak login sayfası da aynı dilde açılır (AC-LANG-01-01 "Login ekranı dahil"). Realm zaten `supportedLocales: [en, tr]`, `defaultLocale: en` |
 | 4 | Tarih | **Taşıma daima ISO `YYYY-MM-DD`; gösterim iki dilde de sabit `dd.MM.yyyy`.** Mock İngilizce arayüzde bile `02.11.1996` gösteriyor — analist dilden bağımsız TR formatı istemiş. DatePicker placeholder'ı da iki dilde `DD.MM.YYYY`. `MM/dd` belirsizliği riski sıfırlanır |
 | 5 | Sayı | Bu fazda **locale'e bağlı sayı formatlaması yok** — ekranlarda para/ondalık alan bulunmuyor. ID/telefon/numara alanları `font-variant-numeric: tabular-nums` ile ham gösterilir. Para birimi FR-SALE geldiğinde ayrıca karara bağlanacak |

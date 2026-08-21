@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import type { CampaignResponse, OfferResponse, ServiceType } from '../../../core/catalog';
+import type { CampaignResponse, OfferResponse, ServiceType } from '../../../shared/product-catalog';
 import {
   REQUIRED_SERVICE_TYPES,
   type BasketGroup,

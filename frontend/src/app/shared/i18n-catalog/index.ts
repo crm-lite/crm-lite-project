@@ -20,3 +20,10 @@ export type TranslationKey = keyof typeof CATALOG;
 
 export { LABELS, MESSAGES, UI };
 export type { Translation, Catalog } from './catalog.types';
+export {
+  DEFAULT_LANGUAGE,
+  LANGUAGES,
+  LANGUAGE_STORAGE_KEY,
+  isLanguage,
+  type Language,
+} from './language';

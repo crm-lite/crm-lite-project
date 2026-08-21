@@ -1,4 +1,4 @@
-import type { Language } from '../language';
+import type { Language } from './language';
 
 /** One catalogue entry: the same key resolved in every supported language.
  *  The shape makes "exists in EN but missing in TR" a compile error

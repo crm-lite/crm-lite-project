@@ -127,10 +127,10 @@ recorded rather than silently resolved. One such case already exists
 ### (g) Translation files are organized per feature
 ```
 core/i18n/
-├── i18n.service.ts
-├── catalog/
-│   ├── messages.ts        # MSG-*  (analyst + project-authored, marked)
-│   └── labels.ts          # LBL-*  (analyst)
+└── i18n.service.ts
+shared/i18n-catalog/           # moved out of core/ on 2026-08-21 (FE-ADR-003 revision)
+├── messages.ts            # MSG-*  (analyst + project-authored, marked)
+└── labels.ts              # LBL-*  (analyst)
 features/customer/
 ├── search/i18n.ts         # UI-SEARCH-*
 ├── create/i18n.ts         # UI-CREATE-*

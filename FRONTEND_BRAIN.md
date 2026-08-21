@@ -413,39 +413,41 @@ frontend/
         │   └── shell.ts / shell.html   # header + sidenav + main (mock §4)
         ├── core/                # singleton'lar; features'a ASLA bakmaz
         │   ├── [✓] i18n/        # runtime i18n altyapısı (§6B)
-        │   │   ├── i18n.service.ts · translate.pipe.ts · language.ts · index.ts
-        │   │   └── catalog/     # labels.ts (LBL) · messages.ts (MSG) · ui.ts (UI) · index.ts
+        │   │   └── i18n.service.ts · translate.pipe.ts · index.ts
         │   ├── [✓] auth/        # auth.service.ts (signals) · auth.guard.ts · session.model.ts
         │   ├── [✓] http/        # api-error.ts · field-errors.ts · 2 interceptor · provide-core-http.ts
-        │   ├── [✓] lookup/      # ✅ 2026-07-25: LookupApiService (statuses/types/cities/districts)
-        │   │                    #   + LookupCacheService (signal önbellek — FE-ADR-006 §1/§6 buraya atadı)
-        │   │   └── lookup.model.ts · lookup-api.service.ts · lookup-cache.service.ts (+spec)
-        │   └── [✓] catalog/   # ✅ 2026-08-03: ürün KATALOĞU (offers / campaigns /
-        │       │              #   characteristics) — İKİ feature besliyor (product + satış
-        │       │              #   sihirbazı); kardeş import yasak olduğu için core'da,
-        │       │              #   emsal core/lookup (scope §2B.10). Hiçbir ucu sayfalamıyor
-        │       └── catalog.model.ts · catalog-api.service.ts (+spec) · index.ts
-        ├── shared/              # core'a ve features'a ASLA bakmaz
+        │   └── [✓] lookup/      # ✅ 2026-07-25: LookupApiService (statuses/types/cities/districts)
+        │                        #   + LookupCacheService (signal önbellek — FE-ADR-006 §1/§6 buraya atadı)
+        │       └── lookup.model.ts · lookup-api.service.ts · lookup-cache.service.ts (+spec)
+        ├── shared/              # core'a ve features'a ASLA bakmaz — HOMOJEN DEĞİL:
+        │                        #   ui/ + patterns/ taşınabilir, *-catalog/ bu projeye özel
         │   ├── [✓] ui/          # ✅ 2026-07-25: 7 EDS bileşeni yazıldı (FE-ADR-011 §d; PasswordInput YOK)
         │   │   ├── icon/ button/ icon-button/ form-field/
         │   │   ├── text-input/ select/ date-picker/   # hepsi spec'li (98 test)
         │   │   └── index.ts     # barrel; metinler ÇÖZÜLMÜŞ girer (§4.14) — bileşen çeviri yapmaz
-        │   └── [✓] patterns/    # ✅ 2026-07-25: DS'de olmayan kompozit desenler (FE-ADR-011 §d, mock §7.2)
-        │       ├── table/ empty-state/ skeleton/ pagination/   # Customer Search tüketiyor
-        │       │                    #   table: 2026-07-31 opsiyonel satır genişletme
-        │       │                    #   (appTableExpansion + isExpanded) — eklemeli, §4.28/2
-        │       ├── toast/ modal/ tabs/ confirm-dialog/   # Customer Info tüketiyor (modal: headerless varyantlı)
-        │       │                    #   modal: 2026-08-03 `overflowVisible` girdisi (BUG-2 —
-        │       │                    #   gövdenin overflow-y-auto'su Select panelini kırpıyordu)
-        │       │                    #   + 4. boyut: sm 420 / md 480 / lg 560 / xl 680 (§4.30)
-        │       │                    #   confirm-dialog: 2026-08-03 `tone` girdisi (danger|info)
-        │       │                    #   — §2.7 submit onayı info daire + primary Yes (§2B.15)
-        │       │                    #   pagination/page-size.ts: 2026-08-03 KR-04 whitelist'in
-        │       │                    #   TEK kaynağı (PAGE_SIZE_OPTIONS · PageSize · isPageSize)
-        │       ├── status-badge/    # ✅ 2026-07-25 (F6): nokta+metin durum rozeti (mock §6.4)
-        │       ├── stepper/         # ✅ 2026-07-25 (F7): pasif wizard göstergesi (mock §6.3)
-        │       └── index.ts         # barrel; sözleşme shared/ui ile aynı (saf sunum, çözülmüş metin,
-        │                            #   testId zorunlu; kayıt: scope §4.21/4.23); stepper/badge/card → ekranı gelince
+        │   ├── [✓] patterns/    # ✅ 2026-07-25: DS'de olmayan kompozit desenler (FE-ADR-011 §d, mock §7.2)
+        │   │   ├── table/ empty-state/ skeleton/ pagination/   # Customer Search tüketiyor
+        │   │   │                    #   table: 2026-07-31 opsiyonel satır genişletme
+        │   │   │                    #   (appTableExpansion + isExpanded) — eklemeli, §4.28/2
+        │   │   ├── toast/ modal/ tabs/ confirm-dialog/   # Customer Info tüketiyor (modal: headerless varyantlı)
+        │   │   │                    #   modal: 2026-08-03 `overflowVisible` girdisi (BUG-2 —
+        │   │   │                    #   gövdenin overflow-y-auto'su Select panelini kırpıyordu)
+        │   │   │                    #   + 4. boyut: sm 420 / md 480 / lg 560 / xl 680 (§4.30)
+        │   │   │                    #   confirm-dialog: 2026-08-03 `tone` girdisi (danger|info)
+        │   │   │                    #   — §2.7 submit onayı info daire + primary Yes (§2B.15)
+        │   │   │                    #   pagination/page-size.ts: 2026-08-03 KR-04 whitelist'in
+        │   │   │                    #   TEK kaynağı (PAGE_SIZE_OPTIONS · PageSize · isPageSize)
+        │   │   ├── status-badge/    # ✅ 2026-07-25 (F6): nokta+metin durum rozeti (mock §6.4)
+        │   │   ├── stepper/         # ✅ 2026-07-25 (F7): pasif wizard göstergesi (mock §6.3)
+        │   │   └── index.ts         # barrel; sözleşme shared/ui ile aynı (saf sunum, çözülmüş metin,
+        │   │                        #   testId zorunlu; kayıt: scope §4.21/4.23); stepper/badge/card → ekranı gelince
+        │   ├── [✓] i18n-catalog/    # ⬅️ 2026-08-21: core/i18n/catalog/ + language.ts BURAYA taşındı —
+        │   │                        #   309 anahtarlık TR/EN sözlüğü PROJEYE ÖZEL içerik, altyapı değil
+        │   │   └── catalog.types.ts · labels.ts · messages.ts · ui.ts · language.ts · index.ts
+        │   └── [✓] product-catalog/ # ⬅️ 2026-08-21: core/catalog/ BURAYA taşındı — ürün KATALOĞU
+        │                            #   (offers / campaigns / characteristics); İKİ feature besliyor
+        │                            #   (product + satış sihirbazı), kardeş import yasak (scope §2B.10)
+        │       └── catalog.model.ts · catalog-api.service.ts (+spec) · characteristic-validation.ts (+spec) · index.ts
         └── features/
             ├── [✓] access-denied/           # 403 rol reddi sayfası (MSG-AUTH-FORBIDDEN)
             ├── customer/
@@ -689,7 +691,7 @@ ve `data-testid` sözleşmeleri yazıldı. Yazım sırası:
       (Offer Selection / Product Configuration / Submit Order), mock `.dc.html`
       düzenleri birebir. Sipariş **domaini** `features/order/` (model +
       `OrderApiService` + `SaleBasketStore` + `OrderSubmitStore`), katalog
-      **`core/catalog/`** (iki feature'ı besliyor — `core/lookup` emsali).
+      **`shared/product-catalog/`** (iki feature'ı besliyor — `core/lookup` emsali).
       Sihirbaz `features/customer/` altında, çünkü adım 2 müşterinin adreslerini
       ve FR-ADDR-02 dialog'unu kullanıyor; `features/order/` altında olsa yeni
       bir `order → customer` kardeş yönü açılırdı (FE-ADR-003; scope §2B.9).
@@ -865,7 +867,7 @@ this.i18n.setLanguage('tr');        // localStorage'a yazar, tüm ekran anında 
 const lang = this.i18n.lang();      // read-only signal
 ```
 
-**Üç katalog, tek çatı** (`core/i18n/catalog/`):
+**Üç katalog, tek çatı** (`shared/i18n-catalog/`):
 | Dosya | Önek | Kaynak | Sayı |
 |---|---|---|---|
 | `labels.ts` | `LBL-*` | analist (docx §4) | 21 |

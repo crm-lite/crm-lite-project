@@ -7,7 +7,7 @@ import {
   type CampaignResponse,
   type CharacteristicResponse,
   type OfferResponse,
-} from '../../../core/catalog';
+} from '../../../shared/product-catalog';
 import { type OrderStatusResponse } from '../../order';
 import { type AddressResponse } from '../model';
 import { CustomerFlashService } from '../state/customer-flash.service';

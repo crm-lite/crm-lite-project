@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
-import { CATALOG } from './catalog';
+import { CATALOG } from '../../shared/i18n-catalog';
 import { I18nService } from './i18n.service';
-import { LANGUAGE_STORAGE_KEY, LANGUAGES } from './language';
+import { LANGUAGE_STORAGE_KEY, LANGUAGES } from '../../shared/i18n-catalog';
 
 /**
  * Catalogue-integrity + i18n behaviour (FE-ADR-008 §Consequences: "a

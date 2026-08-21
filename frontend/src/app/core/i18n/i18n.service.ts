@@ -1,7 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { CATALOG } from './catalog';
-import type { Catalog } from './catalog';
-import { DEFAULT_LANGUAGE, LANGUAGE_STORAGE_KEY, isLanguage, type Language } from './language';
+import { CATALOG } from '../../shared/i18n-catalog';
+import type { Catalog } from '../../shared/i18n-catalog';
+import { DEFAULT_LANGUAGE, LANGUAGE_STORAGE_KEY, isLanguage, type Language } from '../../shared/i18n-catalog';
 
 const GENERIC_KEY = 'UI-ERROR-GENERIC';
 

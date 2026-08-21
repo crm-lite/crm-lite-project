@@ -4,6 +4,25 @@
 Accepted (2026-07-23). Mirrors the aggregate boundary established by
 **ADR-001** on the backend.
 
+### Revision (2026-08-21): the `core → shared` arrow is now in use
+Project-specific content — the i18n dictionary (`shared/i18n-catalog/`, moved
+from `core/i18n/catalog/` together with `language.ts`) and the product catalog
+(`shared/product-catalog/`, moved from `core/catalog/`) — now lives under
+`shared/`, so `core/` holds only infrastructure that could be reused in another
+project: auth, http, the i18n *engine*, and lookup.
+
+`shared/` is consequently **not homogeneous**: `ui/` and `patterns/` remain
+portable, while `i18n-catalog/` and `product-catalog/` belong to this project
+alone. The move needed no new code and no ESLint change — `core → shared` was
+already a permitted direction, it simply had no users until now.
+
+> Wording carried over from §1 that this revision does not satisfy literally:
+> `shared/` is described there as having "**no** HTTP calls".
+> `product-catalog/` contains `CatalogApiService`. The layer's binding rule is
+> the import direction (`shared/` never imports `core/` or `features/`), which
+> still holds; the "no HTTP calls" phrasing now describes `shared/ui/` and
+> `shared/patterns/` rather than all of `shared/`.
+
 ## Context
 The buildable scope (FE-ADR-013) is three screens: Customer Search, Create
 Customer and Customer Info. They are not independent: the address card grid and

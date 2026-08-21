@@ -8,7 +8,7 @@ import {
   characteristicValidators,
   todayIso,
   type CharacteristicResponse,
-} from '../../../core/catalog';
+} from '../../../shared/product-catalog';
 import { I18nService, TranslatePipe } from '../../../core/i18n';
 import { Skeleton } from '../../../shared/patterns';
 import {
@@ -63,7 +63,7 @@ function controlKey(offerId: number, characteristicId: number): string {
  * touched, paints `MSG-VAL-CHAR-REQUIRED` / `MSG-VAL-CHAR-FORMAT` UNDER the
  * offending field, scrolls the first one into view and answers `false`, so the
  * Submit screen never opens over an unfilled mandatory field. The rules
- * themselves live in `core/catalog/characteristic-validation` — a deliberate
+ * themselves live in `shared/product-catalog/characteristic-validation` — a deliberate
  * mirror of product-service's `CharacteristicValidationRules`, which stays the
  * authority: `POST /api/orders` re-validates and its rejections still render on
  * step 3 (FE-ADR-007 §3).
